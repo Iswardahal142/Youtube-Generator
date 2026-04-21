@@ -18,6 +18,7 @@ function GeneratePage({ user }) {
   const [titlePreview, setTitlePreview]   = useState('');
   const [showStart, setShowStart]         = useState(false);
   const [showWarning, setShowWarning]     = useState(false);
+  const [channelName, setChannelName]     = useState('');
 
   // Story writer state
   const [screen, setScreen]             = useState('setup'); // setup | story | analysis | thumb
@@ -52,37 +53,39 @@ function GeneratePage({ user }) {
     { key: 'psychological', label: '🧠 Psycho' },
   ];
 
-  // ── Load state from Firebase on mount ────────────useEffect(() => {
-  if (!user?.uid) return;
-  
-  // Firebase state load
-  import('../../lib/firebase').then(async ({ db_loadState }) => {
-    const d = await db_loadState(user.uid);
-    if (d) {
-      if (d.season)       setSeason(d.season);
-      if (d.epNum)        setEpNum(d.epNum);
-      if (d.title)        setTitle(d.title);
-      if (d.currentEpId)  setCurrentEpId(d.currentEpId);
-      if (d.storyChunks?.length) {
-        setStoryChunks(d.storyChunks);
-        setWordCount(d.storyChunks.reduce((a,c) => a + c.text.split(/\s+/).length, 0));
-      }
-      if (d.storyEnded)   setStoryEnded(true);
-      stateRef.current = d;
-    }
-  });
+  // ── Load state from Firebase + fetch channel name ─
+  useEffect(() => {
+    if (!user?.uid) return;
 
-  // ── Channel name directly YouTube API se fetch karo ──
-  fetch('/api/youtube')
-    .then(r => r.json())
-    .then(data => {
-      if (data.channelName) {
-        stateRef.current = { ...stateRef.current, channel: data.channelName };
+    // Firebase state load
+    import('../../lib/firebase').then(async ({ db_loadState }) => {
+      const d = await db_loadState(user.uid);
+      if (d) {
+        if (d.season)       setSeason(d.season);
+        if (d.epNum)        setEpNum(d.epNum);
+        if (d.title)        setTitle(d.title);
+        if (d.currentEpId)  setCurrentEpId(d.currentEpId);
+        if (d.storyChunks?.length) {
+          setStoryChunks(d.storyChunks);
+          setWordCount(d.storyChunks.reduce((a,c) => a + c.text.split(/\s+/).length, 0));
+        }
+        if (d.storyEnded)   setStoryEnded(true);
+        stateRef.current = d;
       }
-    })
-    .catch(() => {});
+    });
 
-}, [user?.uid]);
+    // ── Channel name directly YouTube API se fetch ──
+    fetch('/api/youtube')
+      .then(r => r.json())
+      .then(data => {
+        if (data.channelName) {
+          setChannelName(data.channelName);
+          stateRef.current = { ...stateRef.current, channel: data.channelName };
+        }
+      })
+      .catch(() => {});
+
+  }, [user?.uid]);
 
   function saveState(updates) {
     const next = { ...stateRef.current, ...updates };
@@ -94,25 +97,24 @@ function GeneratePage({ user }) {
 
   // ── Generate Story Idea ───────────────────────────
   async function generateAiStoryIdea() {
-  setGenState('checking');
+    setGenState('checking');
 
-  try {
-    // Sirf tab check karo jab koi current story nahi chal rahi
-    if (!stateRef.current.storyChunks?.length) {
-      const { db_getEpisodes } = await import('../../lib/firebase');
-      const eps = await db_getEpisodes(user.uid);
-      
-      // Koi episode hai jo ended hai but ytUploaded nahi
-      const hasUnuploaded = eps?.some(ep => ep.ended && ep.ytUploaded === false);
-      
-      if (hasUnuploaded) {
-        setShowWarning(true);  // warning banner already hai tere UI mein
-        setGenState('idle');
-        return; // block kar do generate
+    try {
+      // Sirf tab check karo jab koi current story nahi chal rahi
+      if (!stateRef.current.storyChunks?.length) {
+        const { db_getEpisodes } = await import('../../lib/firebase');
+        const eps = await db_getEpisodes(user.uid);
+
+        // Koi episode hai jo ended hai but ytUploaded explicitly false hai
+        const hasUnuploaded = eps?.some(ep => ep.ended && ep.ytUploaded === false);
+
+        if (hasUnuploaded) {
+          setShowWarning(true);
+          setGenState('idle');
+          return;
+        }
       }
-    }
-  } catch {}
-
+    } catch {}
 
     setGenState('generating');
     setShowWarning(false);
@@ -421,7 +423,7 @@ ${seasonBible ? `\n\nPREVIOUS SEASON CONTINUITY:\n${seasonBible}` : ''}`;
                   <span className="sg-live-dot" />
                   <span className="sg-channel-meta">CHANNEL</span>
                 </div>
-                <span style={{ fontSize: 12, color: '#aaa' }}>{stateRef.current.channel || 'Not set'}</span>
+                <span style={{ fontSize: 12, color: '#aaa' }}>{channelName || 'Fetching...'}</span>
               </div>
 
               {/* Studio card */}
