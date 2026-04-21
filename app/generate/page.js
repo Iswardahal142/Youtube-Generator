@@ -82,15 +82,25 @@ function GeneratePage({ user }) {
 
   // ── Generate Story Idea ───────────────────────────
   async function generateAiStoryIdea() {
-    setGenState('checking');
-    // Upload check
-    try {
-      const eps = stateRef.current.storyChunks?.length
-        ? [] : await (await import('../../lib/firebase')).db_getEpisodes(user.uid);
-      if (eps?.length) {
-        // Skip complex YT check for now — allow
+  setGenState('checking');
+
+  try {
+    // Sirf tab check karo jab koi current story nahi chal rahi
+    if (!stateRef.current.storyChunks?.length) {
+      const { db_getEpisodes } = await import('../../lib/firebase');
+      const eps = await db_getEpisodes(user.uid);
+      
+      // Koi episode hai jo ended hai but ytUploaded nahi
+      const hasUnuploaded = eps?.some(ep => ep.ended && !ep.ytUploaded);
+      
+      if (hasUnuploaded) {
+        setShowWarning(true);  // warning banner already hai tere UI mein
+        setGenState('idle');
+        return; // block kar do generate
       }
-    } catch {}
+    }
+  } catch {}
+
 
     setGenState('generating');
     setShowWarning(false);
