@@ -50,6 +50,7 @@ function YoutubePage({ user }) {
     fetchYtStatus();
   }, [user?.uid]);
 
+  // ── YouTube status + auto upload detect ───────────
   async function fetchYtStatus() {
     setYtStatus('loading');
     try {
@@ -59,6 +60,29 @@ function YoutubePage({ user }) {
       setLastVideo(data.lastVideo || null);
       setChannelName(data.channelName || '');
       setYtStatus('ok');
+
+      // ── Auto YouTube upload detect ──
+      const { db_loadState, db_saveEpisode } = await import('../../lib/firebase');
+      const state = await db_loadState(user.uid);
+
+      if (state?.currentEpId && state?.title && data.lastVideo?.title) {
+        const storyTitleLower = state.title.trim().toLowerCase();
+        const ytTitleLower    = data.lastVideo.title.trim().toLowerCase();
+
+        // Koi bhi meaningful word match kare (3+ chars)
+        const isMatch = storyTitleLower.split(' ').some(word =>
+          word.length > 3 && ytTitleLower.includes(word)
+        );
+
+        if (isMatch) {
+          await db_saveEpisode(user.uid, {
+            id:         state.currentEpId,
+            ytUploaded: true,
+          });
+          toast('✅ YouTube upload detect hua — episode complete mark ho gaya!');
+        }
+      }
+
     } catch {
       setYtStatus('error');
     }
