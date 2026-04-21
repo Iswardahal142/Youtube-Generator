@@ -8,7 +8,11 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="hi">
-      <body>{children}</body>
+      <body>
+        {children}
+        <script src="//cdn.jsdelivr.net/npm/eruda" />
+        <script dangerouslySetInnerHTML={{ __html: 'eruda.init()' }} />
+      </body>
     </html>
   );
 }
