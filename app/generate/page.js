@@ -52,25 +52,37 @@ function GeneratePage({ user }) {
     { key: 'psychological', label: '🧠 Psycho' },
   ];
 
-  // ── Load state from Firebase on mount ────────────
-  useEffect(() => {
-    if (!user?.uid) return;
-    import('../../lib/firebase').then(async ({ db_loadState }) => {
-      const d = await db_loadState(user.uid);
-      if (d) {
-        if (d.season)       setSeason(d.season);
-        if (d.epNum)        setEpNum(d.epNum);
-        if (d.title)        setTitle(d.title);
-        if (d.currentEpId)  setCurrentEpId(d.currentEpId);
-        if (d.storyChunks?.length) {
-          setStoryChunks(d.storyChunks);
-          setWordCount(d.storyChunks.reduce((a,c) => a + c.text.split(/\s+/).length, 0));
-        }
-        if (d.storyEnded)   setStoryEnded(true);
-        stateRef.current = d;
+  // ── Load state from Firebase on mount ────────────useEffect(() => {
+  if (!user?.uid) return;
+  
+  // Firebase state load
+  import('../../lib/firebase').then(async ({ db_loadState }) => {
+    const d = await db_loadState(user.uid);
+    if (d) {
+      if (d.season)       setSeason(d.season);
+      if (d.epNum)        setEpNum(d.epNum);
+      if (d.title)        setTitle(d.title);
+      if (d.currentEpId)  setCurrentEpId(d.currentEpId);
+      if (d.storyChunks?.length) {
+        setStoryChunks(d.storyChunks);
+        setWordCount(d.storyChunks.reduce((a,c) => a + c.text.split(/\s+/).length, 0));
       }
-    });
-  }, [user?.uid]);
+      if (d.storyEnded)   setStoryEnded(true);
+      stateRef.current = d;
+    }
+  });
+
+  // ── Channel name directly YouTube API se fetch karo ──
+  fetch('/api/youtube')
+    .then(r => r.json())
+    .then(data => {
+      if (data.channelName) {
+        stateRef.current = { ...stateRef.current, channel: data.channelName };
+      }
+    })
+    .catch(() => {});
+
+}, [user?.uid]);
 
   function saveState(updates) {
     const next = { ...stateRef.current, ...updates };
