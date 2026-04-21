@@ -91,7 +91,7 @@ function GeneratePage({ user }) {
       const eps = await db_getEpisodes(user.uid);
       
       // Koi episode hai jo ended hai but ytUploaded nahi
-      const hasUnuploaded = eps?.some(ep => ep.ended && !ep.ytUploaded);
+      const hasUnuploaded = eps?.some(ep => ep.ended && ep.ytUploaded === false);
       
       if (hasUnuploaded) {
         setShowWarning(true);  // warning banner already hai tere UI mein
