@@ -1,47 +1,35 @@
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const q = searchParams.get('q') || 'horror dark suspense';
+  const q = searchParams.get('q') || 'horror background music no copyright';
 
   try {
-    // Pixabay Music API
-    const url = `https://pixabay.com/api/music/?key=${process.env.PIXABAY_KEY}&q=${encodeURIComponent(q)}&per_page=8`;
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&videoCategoryId=10&maxResults=8&key=${process.env.YOUTUBE_API_KEY}`;
     const res = await fetch(url);
 
     if (!res.ok) {
-      console.error('[music] Pixabay response not ok:', res.status, res.statusText);
-      return Response.json({ hits: [], error: `HTTP ${res.status}` }, { status: 200 });
+      console.error('[music] YouTube API error:', res.status);
+      return Response.json({ hits: [] }, { status: 200 });
     }
 
-    const text = await res.text();
-    console.log('[music] Raw response:', text.slice(0, 300));
+    const data = await res.json();
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (parseErr) {
-      console.error('[music] JSON parse failed:', text.slice(0, 300));
-      return Response.json({ hits: [], error: 'parse_failed' }, { status: 200 });
+    if (!data.items?.length) {
+      return Response.json({ hits: [] }, { status: 200 });
     }
 
-    // Pixabay music API returns { totalHits, hits: [...] }
-    if (data.hits?.length) {
-      return Response.json(data);
-    }
+    const hits = data.items.map(item => ({
+      id: item.id.videoId,
+      videoId: item.id.videoId,
+      title: item.snippet.title,
+      channel: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails?.default?.url || '',
+      youtubeUrl: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+    }));
 
-    // If hits empty, try with broader query
-    const fallbackUrl = `https://pixabay.com/api/music/?key=${process.env.PIXABAY_KEY}&q=dark+ambient&per_page=8`;
-    const fallbackRes = await fetch(fallbackUrl);
-    const fallbackData = await fallbackRes.json();
-
-    if (fallbackData.hits?.length) {
-      return Response.json(fallbackData);
-    }
-
-    console.warn('[music] No hits found for query:', q);
-    return Response.json({ hits: [], error: 'no_results' }, { status: 200 });
+    return Response.json({ hits });
 
   } catch (e) {
     console.error('[music] Error:', e.message);
-    return Response.json({ hits: [], error: e.message }, { status: 200 });
+    return Response.json({ hits: [] }, { status: 200 });
   }
 }
