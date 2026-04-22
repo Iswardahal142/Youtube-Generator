@@ -89,24 +89,11 @@ function GeneratePage({ user }) {
       }
     });
     // YouTube channel info + top video for trending niche
-   fetch('/api/youtube')
-  .then(r => r.json())
-  .then(data => {
-    if (data.channelName) {
-      setChannelInfo({
-        name: data.channelName,
-        thumb: data.channelThumb || '',
-        subscribers: Number(data.subscriberCount) || 0,
-        videoCount: Number(data.videoCount) || 0,
+    fetch('/api/youtube').then(r=>r.json()).then(data=>{
+      if (data.channelName) setChannelInfo({
+        name: data.channelName, thumb: data.channelThumb||'',
+        subscribers: data.subscriberCount||0, videoCount: data.videoCount||0,
       });
-
-      setVideos(data.videos || []);
-      setLastVideo(data.lastVideo || null);
-    }
-  })
-  .catch(err => {
-    console.error('YouTube fetch error:', err);
-  });
       // Top video = highest views — use for story idea generation
       if (data.videos?.length) {
         const sorted = [...data.videos].sort((a,b)=>(b.viewCount||0)-(a.viewCount||0));
