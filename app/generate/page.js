@@ -51,6 +51,7 @@ function GeneratePage({ user }) {
   const generatedRef    = useRef({ title: '', prompt: '' });
   const stateRef        = useRef({});
   const isGenRef        = useRef(false);
+  const topVideoRef     = useRef(null);  // highest views YT video
 
   const displayName = user?.displayName || user?.email || 'User';
   const initial     = displayName.charAt(0).toUpperCase();
@@ -87,12 +88,17 @@ function GeneratePage({ user }) {
         stateRef.current = d;
       }
     });
-    // YouTube channel info
+    // YouTube channel info + top video for trending niche
     fetch('/api/youtube').then(r=>r.json()).then(data=>{
       if (data.channelName) setChannelInfo({
         name: data.channelName, thumb: data.channelThumb||'',
         subscribers: data.subscriberCount||0, videoCount: data.videoCount||0,
       });
+      // Top video = highest views — use for story idea generation
+      if (data.videos?.length) {
+        const sorted = [...data.videos].sort((a,b)=>(b.viewCount||0)-(a.viewCount||0));
+        topVideoRef.current = sorted[0] || null;
+      }
     }).catch(()=>{});
   }, [user?.uid]);
 
@@ -129,13 +135,17 @@ function GeneratePage({ user }) {
     const genreHint = selectedGenre!=='any'
       ? `Setting/genre: ${selectedGenre}`
       : 'Koi bhi horror setting (haveli, jungle, highway, gaon, school, supernatural, psychological)';
+    const topVid = topVideoRef.current;
+    const topVideoHint = topVid
+      ? `\n\nCHANNEL KA TOP PERFORMING VIDEO (most views — ${(topVid.viewCount||0).toLocaleString()} views):\nTitle: "${topVid.title}"\nDescription: "${(topVid.description||'').slice(0,200)}"\n\nIs video ki THEME aur NICHE se inspired story banao — same direction mein jao jo channel pe already viral hai. Copy mat karo, but usi horror niche ko pakdo.`
+      : '';
     try {
       const res = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           model:'openai/gpt-4o-mini', max_tokens:400, temperature:0.95,
           messages:[{ role:'user',
-            content:`You are a Hindi horror story title generator.\n\nGenre/Setting: ${genreHint}\n\nSTRICT RULES:\n- Title MUST be in Hindi Devanagari script only.\n- Title must be 3-6 Hindi words. NO English words.\n- Plot: 3-4 sentences in Hindi Devanagari.\n\nRespond ONLY in JSON:\n{"title":"हिंदी शीर्षक","plot":"हिंदी में कहानी का विचार"}`
+            content:`You are a Hindi horror story title generator.\n\nGenre/Setting: ${genreHint}${topVideoHint}\n\nSTRICT RULES:\n- Title MUST be in Hindi Devanagari script only.\n- Title must be 3-6 Hindi words. NO English words.\n- Plot: 3-4 sentences in Hindi Devanagari.\n\nRespond ONLY in JSON:\n{"title":"हिंदी शीर्षक","plot":"हिंदी में कहानी का विचार"}`
           }],
         }),
       });
