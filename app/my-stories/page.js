@@ -630,8 +630,8 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
 
                       const charPrompts = sceneChars.map(name => {
                         const found = (chars || []).find(c => c.name?.toLowerCase() === name.toLowerCase());
-                        const desc  = found?.desc || '';
-                        return `full body character sheet, front side view, ${name}${desc ? ', ' + desc : ''}, webtoon 2D style, flat illustration, clean lineart, white background, multiple expressions, multiple poses`;
+                        const visual = found?.visual || found?.desc || '';
+                        return `full body character sheet, front and back view, ${name}${visual ? ', ' + visual : ''}, webtoon 2D flat illustration, clean lineart, white background, character reference sheet, multiple expressions, multiple poses, consistent design across all poses, same face same outfit same colors in every pose, turnaround sheet`;
                       });
 
                       const imagePrompt = s.imgprompt || '';
