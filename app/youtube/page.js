@@ -34,6 +34,13 @@ function formatViews(n) {
   return n.toString();
 }
 
+// ── Season/EP format helper ────────────────────────
+function formatSeasonEp(season, epNum) {
+  const s = (season||'SEASON 1').replace(/\D/g,'').padStart(2,'0');
+  const e = (epNum||'EP 01').replace(/EP\s*/i,'').trim().padStart(2,'0');
+  return `S ${s} EP ${e}`;
+}
+
 // ─────────────────────────────────────────────────
 function YoutubePage({ user }) {
   const toast      = useToast();
@@ -132,7 +139,7 @@ function YoutubePage({ user }) {
 
   // ── Titles — single generate flow ─────────────────
   async function generateYtTitles() {
-    const { chunks, title, epNum } = storyRef.current;
+    const { chunks, title, epNum, season } = storyRef.current;
     if (!chunks.length) { toast('⚠️ Pehle story complete karo!'); return; }
     setTitlesLoading(true);
     setGeneratedTitles([]);
@@ -142,7 +149,7 @@ function YoutubePage({ user }) {
       const res  = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:600, temperature:0.9,
-          messages:[{ role:'user', content:`Tu ek viral Hindi YouTube horror channel ka title expert hai.\n\nStory Title: "${title}"\nStory Summary: ${storyText.slice(0,600)}\n\nIske liye 7 VIRAL YouTube titles banao. Rules:\n- PURE HINDI DEVANAGARI script mein\n- High CTR — suspense, curiosity, fear\n- Mix: question format, shocking statement, cliffhanger\n- 50-70 characters each\n- Episode number include karo: "${epNum}"\n\nSirf JSON array return karo:\n["title 1","title 2","title 3","title 4","title 5","title 6","title 7"]` }],
+          messages:[{ role:'user', content:`Tu ek viral Hindi YouTube horror channel ka title expert hai.\n\nStory Title: "${title}"\nStory Summary: ${storyText.slice(0,600)}\n\nIske liye 7 VIRAL YouTube episode titles banao. Rules:\n- PURE HINDI DEVANAGARI script mein\n- High CTR — suspense, curiosity, fear\n- Mix: question format, shocking statement, cliffhanger\n- 50-70 characters each\n- Sirf episode ka catchy title banao — story ka main title aur season/episode number MAT likhna, woh alag se add hoga\n\nSirf JSON array return karo:\n["title 1","title 2","title 3","title 4","title 5","title 6","title 7"]` }],
         }),
       });
       const data   = await res.json();
@@ -172,11 +179,10 @@ function YoutubePage({ user }) {
       if (eps?.length) {
         const sorted = [...eps].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
         const latestEp = sorted[0];
-        // Build new title: base | selectedTitle | SEASON EP
-        const basePart = (latestEp.title||'').split(' | ')[0].trim() || latestEp.title || '';
-        const seasonPart = latestEp.season || storyRef.current.season || 'SEASON 1';
-        const epPart = latestEp.epNum || storyRef.current.epNum || 'EP 01';
-        const newFullTitle = `${basePart} | ${titleToSave} | ${seasonPart} ${epPart}`;
+
+        const mainTitle = (latestEp.title||'').split(' | ')[0].trim() || latestEp.title || '';
+        const seasonEp  = formatSeasonEp(latestEp.season || storyRef.current.season, latestEp.epNum || storyRef.current.epNum);
+        const newFullTitle = `${mainTitle} | ${titleToSave} | ${seasonEp}`;
 
         await db_saveEpisode(user.uid, {
           ...latestEp,
@@ -241,9 +247,16 @@ function YoutubePage({ user }) {
     : comparison.score>=60 ? '#00cc55'
     : comparison.score>=30 ? '#ffaa00' : '#cc3333';
 
-  // Current showing title
+  // Current showing title (only generated part)
   const currentTitle = generatedTitles[currentTitleIdx] || '';
   const isCurrentSelected = selectedTitle === currentTitle;
+
+  // Full title for display: mainTitle | generatedTitle | S 01 EP 01
+  const mainTitlePart = (storyRef.current.title||'').split(' | ')[0] || storyRef.current.title || '';
+  const seasonEpPart  = formatSeasonEp(storyRef.current.season, storyRef.current.epNum);
+  const fullDisplayTitle = currentTitle
+    ? `${mainTitlePart} | ${currentTitle} | ${seasonEpPart}`
+    : '';
 
   // ─────────────────────────────────────────────────
   // RENDER
@@ -255,10 +268,8 @@ function YoutubePage({ user }) {
       <div className="page-content" style={{background:'var(--void)'}}>
         <div className="mini-topbar">
           <button className="hamburger-btn" onClick={()=>setDrawerOpen(true)}>☰</button>
-          <span className="mini-topbar-title" style={{color:'#ff4444', fontSize: selectedTitle ? 9 : 13, lineHeight:1.3, maxWidth:220, textAlign:'center', overflow:'hidden', display:'block'}}>
-            {selectedTitle
-              ? `${(storyRef.current.title||'').split(' | ')[0] || storyRef.current.title} | ${selectedTitle} | ${storyRef.current.season} ${storyRef.current.epNum}`
-              : '▶ YouTube Export'}
+          <span className="mini-topbar-title" style={{color:'#ff4444', fontSize:13}}>
+            ▶ YouTube Export
           </span>
           <div style={{width:36}}/>
         </div>
@@ -289,18 +300,15 @@ function YoutubePage({ user }) {
                   </div>
                 </div>
 
-                {/* Last Story row — ytTitle ya selected title dikhta hai */}
+                {/* Last Story row — ek line mein full title */}
                 {lastEp && (
                   <div style={{display:'flex',alignItems:'center',gap:10,padding:10,borderRadius:10,background:'rgba(80,0,80,0.12)',border:'1px solid #2a0028',marginBottom:8}}>
                     <div style={{width:36,height:36,borderRadius:8,background:'rgba(120,0,120,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>📚</div>
                     <div style={{flex:1,overflow:'hidden'}}>
-                      <div style={{fontSize:9,color:'#666',letterSpacing:1.5,textTransform:'uppercase',marginBottom:2}}>Last Story</div>
-                      <div style={{fontSize:11,color:'#888',marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{(lastEp.title||'').split(' | ')[0]}</div>
-                      {/* Main title: selected title agar hai toh woh, warna ytTitle ya split title */}
-                      <div style={{fontSize:13,fontWeight:700,color: selectedTitle ? '#66dd99' : '#eee',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                        {selectedTitle || lastEp.ytTitle || (lastEp.title||'').split(' | ')[1] || lastEp.title}
+                      <div style={{fontSize:9,color:'#666',letterSpacing:1.5,textTransform:'uppercase',marginBottom:4}}>Last Story</div>
+                      <div style={{fontSize:12,fontWeight:700,color:'#eee',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontFamily:"'Noto Sans Devanagari',sans-serif"}}>
+                        {lastEp.title || lastEp.ytTitle || '—'}
                       </div>
-                      <div style={{fontSize:10,color:'#554455',marginTop:1}}>{lastEp.season||'Season 1'} · {lastEp.epNum||'EP 01'}</div>
                     </div>
                   </div>
                 )}
@@ -398,12 +406,12 @@ function YoutubePage({ user }) {
                   )}
                 </div>
 
-                {/* Title text */}
+                {/* Full title preview: mainTitle | generatedTitle | S 01 EP 01 */}
                 <div style={{
-                  fontSize:15,
+                  fontSize:13,
                   fontWeight:700,
                   color: isCurrentSelected ? '#66dd99' : '#ddffdd',
-                  lineHeight:1.5,
+                  lineHeight:1.6,
                   fontFamily:"'Noto Sans Devanagari',sans-serif",
                   padding:'10px 12px',
                   background: isCurrentSelected ? 'rgba(0,180,80,0.08)' : 'rgba(255,255,255,0.03)',
@@ -413,7 +421,7 @@ function YoutubePage({ user }) {
                   display:'flex',
                   alignItems:'center',
                 }}>
-                  {currentTitle}
+                  {fullDisplayTitle}
                 </div>
 
                 {/* Action buttons */}
@@ -468,9 +476,9 @@ function YoutubePage({ user }) {
                         : '✔ Select This Title'}
                   </button>
 
-                  {/* Copy */}
+                  {/* Copy full title */}
                   <button
-                    onClick={()=>copyText(currentTitle,'Title')}
+                    onClick={()=>copyText(fullDisplayTitle,'Title')}
                     style={{
                       background:'#0a0a1a',
                       border:'1px solid #222244',
