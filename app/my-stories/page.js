@@ -308,7 +308,7 @@ function MyStoriesPage({ user }) {
   async function fetchMusicAuto() {
     setBgMusicLoading(true); setBgMusic([]); setSelectedMusic(null);
     try {
-      const res  = await fetch('/api/music?q=horror+dark+suspense+ambient');
+      const res  = await fetch('/api/music?q=horror+background+music+no+copyright+free+use');
       const data = await res.json();
       if (data.hits?.length) {
         setBgMusic(data.hits);
@@ -726,27 +726,20 @@ function MyStoriesPage({ user }) {
                         {bgMusic.length>0&&(
                           <div style={{display:'flex',flexDirection:'column',gap:8}}>
                             {bgMusic.map((track,ti)=>(
-                              <div key={ti}
-                                style={{background:selectedMusic?.id===track.id?'rgba(136,0,34,0.15)':'#0a0005',border:`1px solid ${selectedMusic?.id===track.id?'#880022':'#220011'}`,borderRadius:10,padding:'10px 12px',cursor:'pointer'}}
-                                onClick={()=>setSelectedMusic(prev=>prev?.id===track.id?null:track)}>
-                                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                  <span style={{fontSize:16,flexShrink:0}}>{selectedMusic?.id===track.id?'🎵':'🎼'}</span>
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{track.tags?.split(',').slice(0,3).join(', ')||'Track '+(ti+1)}</div>
-                                    <div style={{fontSize:10,color:'#555',marginTop:2}}>{track.duration}s · Free · No Copyright</div>
-                                  </div>
-                                  <a href={track.audio} download target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}
-                                    style={{background:'linear-gradient(135deg,#003300,#001a00)',border:'1px solid #004400',color:'#44bb66',borderRadius:6,padding:'6px 10px',fontSize:11,textDecoration:'none',fontWeight:700,flexShrink:0}}>⬇ DL</a>
+                              <a key={ti} href={track.youtubeUrl} target="_blank" rel="noreferrer"
+                                style={{display:'flex',alignItems:'center',gap:10,background:'#0a0005',border:'1px solid #220011',borderRadius:10,padding:'10px 12px',textDecoration:'none',cursor:'pointer'}}
+                                onMouseEnter={e=>e.currentTarget.style.borderColor='#880022'}
+                                onMouseLeave={e=>e.currentTarget.style.borderColor='#220011'}>
+                                {track.thumbnail
+                                  ?<img src={track.thumbnail} alt="" style={{width:48,height:36,borderRadius:6,objectFit:'cover',flexShrink:0,border:'1px solid #330011'}}/>
+                                  :<span style={{fontSize:22,flexShrink:0}}>🎵</span>
+                                }
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:600,color:'#ddd',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{track.title}</div>
+                                  <div style={{fontSize:10,color:'#555',marginTop:3}}>{track.channel} · YouTube</div>
                                 </div>
-                                {selectedMusic?.id===track.id&&(
-                                  <div style={{marginTop:8}}>
-                                    <audio controls src={track.audio} style={{width:'100%',height:32,marginBottom:6}}/>
-                                    <a href={track.audio} download target="_blank" rel="noreferrer"
-                                      style={{display:'block',background:'linear-gradient(135deg,#004400,#002200)',border:'1px solid #006600',color:'#44ee66',borderRadius:8,padding:'8px',fontSize:12,textAlign:'center',textDecoration:'none',fontWeight:700}}>⬇ Full Download Karo</a>
-                                    <div style={{fontSize:10,color:'#444',marginTop:4,textAlign:'center'}}>Pixabay Music — Free commercial use · No attribution required</div>
-                                  </div>
-                                )}
-                              </div>
+                                <span style={{fontSize:18,color:'#ff4444',flexShrink:0}}>▶</span>
+                              </a>
                             ))}
                           </div>
                         )}
