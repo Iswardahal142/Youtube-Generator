@@ -779,7 +779,7 @@ function MyStoriesPage({ user }) {
                         <div className="analysis-hint" style={{marginBottom:8}}>
                           {ytMusicVideos.length===0&&!ytMusicLoading
                             ?<span style={{color:'#555'}}>Story end hone pe auto fetch hoga. Ya query likhke search karo. 👆</span>
-                            :<span style={{color:'#555'}}>Preview sun lo — Y2Mate se download karo.</span>
+                            :<span style={{color:'#555'}}>▶ Preview dabao — video expand hoga. 📋 Copy karo aur downloader mein paste karo.</span>
                           }
                         </div>
 
@@ -832,16 +832,25 @@ function MyStoriesPage({ user }) {
 
                                 {/* Preview */}
                                 <button
-                                  onClick={()=>setPreviewModalVideo(vid)}
+                                  onClick={()=>setPreviewModalVideo(previewModalVideo?.videoId===vid.videoId ? null : vid)}
                                   style={{flex:1,background:'linear-gradient(135deg,#550022,#330011)',
                                     border:'1px solid #880033',color:'#ff6699',borderRadius:8,
                                     fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
-                                  ▶ Preview
+                                  {previewModalVideo?.videoId===vid.videoId ? '✕ Close' : '▶ Preview'}
                                 </button>
 
-                                {/* Download Y2Mate */}
+                                {/* Copy Link */}
                                 <button
-                                  onClick={()=>vid.audioUrl && window.open(vid.audioUrl,'_blank')}
+                                  onClick={()=>{navigator.clipboard.writeText(`https://youtube.com/watch?v=${vid.videoId}`);toast('✅ Link copy ho gaya!');}}
+                                  style={{flex:1,background:'linear-gradient(135deg,#001a33,#000d1a)',
+                                    border:'1px solid #004499',color:'#4499ff',borderRadius:8,
+                                    fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
+                                  📋 Copy
+                                </button>
+
+                                {/* Download */}
+                                <button
+                                  onClick={()=>window.open(`https://www.google.com/search?q=youtube+video+downloader`,'_blank')}
                                   style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
                                     border:'1px solid #004400',color:'#44bb66',borderRadius:8,
                                     fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
@@ -859,6 +868,18 @@ function MyStoriesPage({ user }) {
                                   ▶
                                 </button>
                               </div>
+
+                              {/* Inline YouTube embed */}
+                              {previewModalVideo?.videoId===vid.videoId&&(
+                                <iframe
+                                  src={`https://www.youtube.com/embed/${vid.videoId}?autoplay=1`}
+                                  width="100%" height="180"
+                                  frameBorder="0"
+                                  allow="autoplay; encrypted-media"
+                                  allowFullScreen
+                                  style={{display:'block',borderTop:'1px solid #220011'}}
+                                />
+                              )}
                             </div>
                           );
                         })()}
@@ -944,52 +965,7 @@ function MyStoriesPage({ user }) {
         </div>
       </div>
 
-      {/* ── Preview Modal ── */}
-      {previewModalVideo&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:300,
-          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:16}}>
-          <div style={{background:'#0d000d',border:'1px solid #550033',borderRadius:14,
-            width:'100%',maxWidth:420,overflow:'hidden'}}>
-            {/* Header */}
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-              padding:'14px 16px',borderBottom:'1px solid #220011'}}>
-              <div style={{fontSize:13,fontWeight:700,color:'#cc4466'}}>▶ Preview</div>
-              <button onClick={()=>setPreviewModalVideo(null)}
-                style={{background:'none',border:'none',color:'#555',fontSize:22,cursor:'pointer',lineHeight:1}}>✕</button>
-            </div>
-            {/* Track info */}
-            <div style={{padding:'12px 16px',borderBottom:'1px solid #1a0010'}}>
-              <div style={{fontSize:12,color:'#ddd',fontWeight:600,marginBottom:4,
-                whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                🎵 {previewModalVideo.title}
-              </div>
-              <div style={{fontSize:10,color:'#555'}}>{previewModalVideo.channelTitle}</div>
-            </div>
-            {/* YouTube embed */}
-            <div style={{padding:'12px 16px 8px'}}>
-              <div style={{borderRadius:10,overflow:'hidden',background:'#000',border:'1px solid #220011'}}>
-                <audio
-  src={previewModalVideo.audioUrl}
-  controls
-  autoPlay
-  style={{width:'100%',marginTop:8,accentColor:'#cc4466'}}
-/>
-              </div>
-            </div>
-            {/* Download button */}
-            <div style={{padding:'8px 16px 16px'}}>
-              <button
-                onClick={()=>previewModalVideo.audioUrl && window.open(previewModalVideo.audioUrl,'_blank')}
-                style={{width:'100%',background:'linear-gradient(135deg,#003300,#001a00)',
-                  border:'1px solid #006600',color:'#44ee66',
-                  borderRadius:8,padding:'11px',fontSize:13,
-                  cursor:'pointer',fontWeight:700}}>
-                 Download This
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Preview Modal removed - inline embed used instead ── */}
 
       <BottomNav userInitial={initial}/>
     </>
