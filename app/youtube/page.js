@@ -311,32 +311,6 @@ function YoutubePage({ user }) {
             )}
           </div>
 
-          {/* ── Upload Checklist ── */}
-          <CollapseCard title="✅ Upload Checklist" titleColor="#ff4444" defaultOpen>
-            <div style={{fontSize:11,color:'#444',marginBottom:10}}>Upload ke pehle yeh complete hone chahiye</div>
-            <div style={{display:'flex',flexDirection:'column',gap:6}}>
-              {[
-                { key:'title',    icon:'🎯', label:'YouTube Title select karo' },
-                { key:'desc',     icon:'📝', label:'Description copy karo' },
-                { key:'uploaded', icon:'📤', label:'YouTube pe upload karo' },
-              ].map(item=>(
-                <div key={item.key} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,background:checks[item.key]?'rgba(0,180,80,0.07)':'rgba(200,0,0,0.05)',border:`1px solid ${checks[item.key]?'rgba(0,180,80,0.2)':'rgba(200,0,0,0.12)'}`}}>
-                 <span style={{fontSize:16}}>{checks[item.key]?'✅':'❌'}</span>
-                  <span style={{fontSize:12,color:checks[item.key]?'#66dd99':'#ff7777',flex:1}}>{item.label}</span>
-                  <span style={{fontSize:9,padding:'2px 7px',borderRadius:20,fontWeight:700,background:'rgba(255,255,255,0.05)',color:'#555'}}>AUTO</span>
-                </div>
-              ))}
-            </div>
-            <div style={{marginTop:12}}>
-              <div className="wc-track" style={{height:5}}>
-                <div className="wc-fill" style={{width:(Object.values(checks).filter(Boolean).length/3*100)+'%',background:'linear-gradient(90deg,#440000,#ff4444)'}}/>
-              </div>
-              <div style={{marginTop:6,fontSize:11,color:Object.values(checks).every(Boolean)?'#44bb66':'#666',textAlign:'center'}}>
-                {Object.values(checks).filter(Boolean).length} / 3 complete {Object.values(checks).every(Boolean)?'🎉 Ready to upload!':''}
-              </div>
-            </div>
-         </CollapseCard>
-
           {/* ── Title Generator ── */}
           <CollapseCard title="🎯 YouTube Title Generator" titleColor="#44bb66" bg="#000a00" borderColor="#003300" defaultOpen>
             <div style={{fontSize:12,color:'#666',lineHeight:1.6,marginBottom:8}}>7 clickbait Hindi titles AI se — high CTR ke liye</div>
