@@ -23,6 +23,24 @@ function fmtViews(n) {
   return String(n);
 }
 
+// ── Collapsible Panel Header ───────────────────────
+function PanelHeader({ icon, title, open, onToggle, rightEl }) {
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:open?8:0}}>
+      <div style={{fontSize:11,color:'#888',fontWeight:700}}>{icon} {title}</div>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        {rightEl}
+        <button onClick={onToggle}
+          style={{background:'#1a0010',border:'1px solid #330022',color:'#cc4466',
+            width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,cursor:'pointer',
+            display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontWeight:700}}>
+          {open?'−':'+'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────
 function MyStoriesPage({ user }) {
   const toast = useToast();
@@ -36,12 +54,10 @@ function MyStoriesPage({ user }) {
   const [curSeason, setCurSeason] = useState('');
   const [seasonEps, setSeasonEps] = useState([]);
 
-  // YouTube data cache
   const [ytVideos,  setYtVideos]  = useState([]);
   const [ytRankMap, setYtRankMap] = useState({});
   const ytLoaded = useRef(false);
 
-  // ── Inline player state ──
   const [activeEp,      setActiveEp]      = useState(null);
   const [playerChunks,  setPlayerChunks]  = useState([]);
   const [playerEnded,   setPlayerEnded]   = useState(false);
@@ -58,21 +74,30 @@ function MyStoriesPage({ user }) {
   const [narrationLoading, setNarrationLoading] = useState(false);
   const [showNarration,    setShowNarration]    = useState(false);
 
-  // ── New: scene accordion + bg music ──
-  const [expandedScene,  setExpandedScene]  = useState(null);
+  // Collapsible panels
+  const [showCharsPanel,  setShowCharsPanel]  = useState(true);
+  const [showMusicPanel,  setShowMusicPanel]  = useState(true);
+  const [showScenesPanel, setShowScenesPanel] = useState(true);
+
+  // Scene accordion
+  const [expandedScene, setExpandedScene] = useState(null);
+
+  // Background music
   const [bgMusic,        setBgMusic]        = useState([]);
   const [bgMusicLoading, setBgMusicLoading] = useState(false);
-  const [bgMusicQuery,   setBgMusicQuery]   = useState('');
   const [selectedMusic,  setSelectedMusic]  = useState(null);
 
-  const storyAreaRef  = useRef(null);
-  const isGenRef      = useRef(false);
-  const stateRef      = useRef({});
+  // Delete story modal
+  const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
+  const [deleteInput,        setDeleteInput]        = useState('');
+
+  const storyAreaRef = useRef(null);
+  const isGenRef     = useRef(false);
+  const stateRef     = useRef({});
 
   const displayName = user?.displayName || user?.email || 'User';
   const initial     = displayName.charAt(0).toUpperCase();
 
-  // ── Load episodes ──────────────────────────────────
   useEffect(() => { if (user?.uid) loadEpisodes(); }, [user?.uid]);
 
   async function loadEpisodes() {
@@ -90,7 +115,6 @@ function MyStoriesPage({ user }) {
     setLoading(false);
   }
 
-  // ── Load YouTube data once ─────────────────────────
   useEffect(() => {
     if (ytLoaded.current) return;
     ytLoaded.current = true;
@@ -105,7 +129,6 @@ function MyStoriesPage({ user }) {
     }).catch(() => {});
   }, []);
 
-  // Match episode to YT video
   function getEpYtInfo(ep) {
     if (!ytVideos.length) return null;
     const matchTitle = ep.ytTitle || (ep.title||'').split(' | ')[1] || ep.title || '';
@@ -128,7 +151,6 @@ function MyStoriesPage({ user }) {
     return map;
   }
 
-  // ── Delete ─────────────────────────────────────────
   async function deleteEpisode(epId) {
     if (!confirm('Delete karna chahte ho?')) return;
     const ytInfo = getEpYtInfo(seasonEps.find(e=>e.id===epId)||{});
@@ -140,25 +162,16 @@ function MyStoriesPage({ user }) {
     setSeasonEps(prev => prev.filter(e => e.id !== epId));
   }
 
-  // ── Delete entire story ────────────────────────────
-  const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
-  const [deleteInput,        setDeleteInput]        = useState('');
-
   async function confirmDeleteStory(baseTitle) {
     if (deleteInput.trim() !== 'DELETE') { toast('❌ "DELETE" likho confirm karne ke liye'); return; }
     const epList = groups[baseTitle] || [];
     const { db_deleteEpisode } = await import('../../lib/firebase');
-    for (const ep of epList) {
-      await db_deleteEpisode(user.uid, ep.id);
-    }
+    for (const ep of epList) await db_deleteEpisode(user.uid, ep.id);
     toast(`🗑 "${baseTitle}" aur saare episodes delete ho gaye`);
-    setDeleteConfirmStory(null);
-    setDeleteInput('');
-    await loadEpisodes();
-    setScreen('stories');
+    setDeleteConfirmStory(null); setDeleteInput('');
+    await loadEpisodes(); setScreen('stories');
   }
 
-  // ── Open episode inline ────────────────────────────
   function openEpisode(ep) {
     const seasonEnded = seasonEps.every(e => e.ended);
     setActiveEp({ ...ep, seasonEnded });
@@ -170,7 +183,7 @@ function MyStoriesPage({ user }) {
     setChars(ep.savedChars || null);
     setShowAnalysis(false);
     setExpandedScene(null);
-    setBgMusic([]); setSelectedMusic(null); setBgMusicQuery('');
+    setBgMusic([]); setSelectedMusic(null);
     stateRef.current = {
       title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
       currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
@@ -179,12 +192,10 @@ function MyStoriesPage({ user }) {
     setScreen('player');
   }
 
-  // ── Save episode helper ────────────────────────────
   async function saveEpisode(chunks, ended) {
     if (!chunks.length || !activeEp) return;
     const ep = {
-      ...activeEp,
-      storyChunks: chunks,
+      ...activeEp, storyChunks: chunks,
       wordCount: chunks.reduce((a,c)=>a+c.text.split(/\s+/).length,0),
       ended, savedAt: Date.now(),
       savedScenes: stateRef.current.savedScenes||null,
@@ -194,52 +205,30 @@ function MyStoriesPage({ user }) {
     await db_saveEpisode(user.uid, ep);
   }
 
-  // ── Story generation ───────────────────────────────
   async function sendContinue() {
     if (isGenRef.current || playerEnded) return;
     isGenRef.current = true; setIsGenerating(true);
-
-    const chunks  = playerChunks;
-    const hint    = promptHint;
-    const bible   = stateRef.current.seasonBible||'';
-    const prompt  = stateRef.current.prompt||'';
-
-    const sys = `You are a Hindi horror story writer. Write ONLY in Hindi Devanagari.
-RULES: 100-120 words per part. End on cliffhanger. Emotion tags: [scared][whisper][laugh][cry][angry][shocked][calm]
-${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
-
+    const chunks = playerChunks, hint = promptHint;
+    const bible  = stateRef.current.seasonBible||'', prompt = stateRef.current.prompt||'';
+    const sys = `You are a Hindi horror story writer. Write ONLY in Hindi Devanagari.\nRULES: 100-120 words per part. End on cliffhanger. Emotion tags: [scared][whisper][laugh][cry][angry][shocked][calm]\n${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     const msgs = chunks.length===0
       ? [{role:'user',content:`केवल हिंदी देवनागरी में लिखो।\n\n${prompt?'कहानी: '+prompt+'\n\n':''}पहला भाग — दृश्य, पात्र, रहस्य। 100-120 शब्द।`}]
-      : [
-          {role:'user',content:`पिछली कहानी:\n\n${chunks.map((c,i)=>`[Part ${i+1}]:\n${c.text}`).join('\n\n')}`},
-          {role:'assistant',content:'[कहानी जारी है...]'},
-          {role:'user',content:hint?`direction: "${hint}"। हिंदी। 100-120 words। Cliffhanger।`:`अगला भाग। हिंदी। 100-120 words। Cliffhanger।`},
-        ];
-
+      : [{role:'user',content:`पिछली कहानी:\n\n${chunks.map((c,i)=>`[Part ${i+1}]:\n${c.text}`).join('\n\n')}`},{role:'assistant',content:'[कहानी जारी है...]'},{role:'user',content:hint?`direction: "${hint}"। हिंदी। 100-120 words। Cliffhanger।`:`अगला भाग। हिंदी। 100-120 words। Cliffhanger।`}];
     const partNum = chunks.length+1;
-    setPlayerChunks([...chunks,{text:'',partNum,streaming:true}]);
-    setPromptHint('');
-
+    setPlayerChunks([...chunks,{text:'',partNum,streaming:true}]); setPromptHint('');
     try {
-      const res = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:'openai/gpt-4o-mini',messages:[{role:'system',content:sys},...msgs],max_tokens:400,temperature:0.88,stream:true})});
-      const reader=res.body.getReader(),dec=new TextDecoder();
-      let full='';
+      const res = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',messages:[{role:'system',content:sys},...msgs],max_tokens:400,temperature:0.88,stream:true})});
+      const reader=res.body.getReader(),dec=new TextDecoder(); let full='';
       while(true){
         const {done,value}=await reader.read(); if(done) break;
         for(const line of dec.decode(value).split('\n')){
           if(!line.startsWith('data: ')) continue;
           const d=line.slice(6).trim(); if(d==='[DONE]') break;
-          try{ const delta=JSON.parse(d).choices?.[0]?.delta?.content||''; if(delta){full+=delta;setPlayerChunks(prev=>{const u=[...prev];u[u.length-1]={...u[u.length-1],text:full};return u;});scrollBottom();} }catch{}
+          try{const delta=JSON.parse(d).choices?.[0]?.delta?.content||'';if(delta){full+=delta;setPlayerChunks(prev=>{const u=[...prev];u[u.length-1]={...u[u.length-1],text:full};return u;});scrollBottom();}}catch{}
         }
       }
-      if(full.trim()){
-        const final=[...chunks,{text:full.trim(),partNum}];
-        setPlayerChunks(final);
-        setWordCount(final.reduce((a,c)=>a+c.text.split(/\s+/).length,0));
-        saveEpisode(final,false);
-      }
-    } catch(e){ setPlayerChunks(chunks); toast('❌ '+e.message); }
+      if(full.trim()){const final=[...chunks,{text:full.trim(),partNum}];setPlayerChunks(final);setWordCount(final.reduce((a,c)=>a+c.text.split(/\s+/).length,0));saveEpisode(final,false);}
+    } catch(e){setPlayerChunks(chunks);toast('❌ '+e.message);}
     isGenRef.current=false; setIsGenerating(false); scrollBottom();
   }
 
@@ -250,8 +239,7 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     const storyCtx=chunks.map((c,i)=>`[Part ${i+1}]:\n${c.text}`).join('\n\n');
     setPlayerChunks([...chunks,{text:'',partNum:chunks.length+1,isEnd:true,streaming:true}]);
     try{
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:'openai/gpt-4o-mini',messages:[{role:'system',content:'Write ONLY in Hindi Devanagari.'},{role:'user',content:`${storyCtx}\n\nPowerful scary ending हिंदी में। 100-120 words। "समाप्त" se khatam karo।`}],max_tokens:500,temperature:0.85,stream:true})});
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',messages:[{role:'system',content:'Write ONLY in Hindi Devanagari.'},{role:'user',content:`${storyCtx}\n\nPowerful scary ending हिंदी में। 100-120 words। "समाप्त" se khatam karo।`}],max_tokens:500,temperature:0.85,stream:true})});
       const reader=res.body.getReader(),dec=new TextDecoder(); let full='';
       while(true){
         const {done,value}=await reader.read(); if(done) break;
@@ -265,226 +253,176 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
       setPlayerChunks(final); setPlayerEnded(true); setShowEndBanner(true);
       await saveEpisode(final,true);
       toast('✅ Episode save ho gaya!');
-      setTimeout(async ()=>{
-        const newTitle = await generateSubtitle(activeEp, final);
-        if (newTitle && activeEp) {
-          const { db_saveEpisode } = await import('../../lib/firebase');
-          await db_saveEpisode(user.uid, { ...activeEp, storyChunks: final, ended: true, title: newTitle, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
-          stateRef.current.title = newTitle;
-          setActiveEp(prev => prev ? { ...prev, title: newTitle } : prev);
+      setTimeout(async()=>{
+        const newTitle=await generateSubtitle(activeEp,final);
+        if(newTitle&&activeEp){
+          const {db_saveEpisode}=await import('../../lib/firebase');
+          await db_saveEpisode(user.uid,{...activeEp,storyChunks:final,ended:true,title:newTitle,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});
+          stateRef.current.title=newTitle;
+          setActiveEp(prev=>prev?{...prev,title:newTitle}:prev);
           await loadEpisodes();
         }
         generateScenesAuto(final);
         generateCharsAuto(final);
-      }, 500);
+        fetchMusicAuto();
+      },500);
     }catch(e){toast('❌ '+e.message);}
     isGenRef.current=false; setIsGenerating(false); scrollBottom();
   }
 
-  // ── Scenes ─────────────────────────────────────────
   async function generateScenesAuto(chunks) {
     setScenesLoading(true);
-    const storyText = (chunks || playerChunks).map(c => c.text).join('\n\n');
-    const curChars  = stateRef.current.savedChars || chars || [];
-    const charList  = curChars.length
-      ? curChars.map(c => `${c.name} (${c.role})`).join(', ')
-      : '';
-    try {
-      const res = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'openai/gpt-4o-mini', max_tokens: 3000, temperature: 0.35,
-          messages: [{ role: 'user', content: `Story: "${stateRef.current.title || ''}":\n\n${storyText}\n\n${charList ? `Story ke characters: ${charList}\n\n` : ''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated character names jo is scene mein hain, story ke context se decide karo]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Start with: "Use these reference images: [char names present in scene]". Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format.` }],
-        })
-      });
-      const data   = await res.json();
-      const raw    = data.choices?.[0]?.message?.content || '';
-      const parsed = parseScenes(raw);
-      if (parsed.length) {
-        setScenes(parsed);
-        stateRef.current.savedScenes = parsed;
-        saveEpisode(playerChunks, playerEnded);
-        toast(`✅ ${parsed.length} scenes ready!`);
-      }
-    } catch(e) { toast('❌ Scenes: ' + e.message); }
+    const storyText=(chunks||playerChunks).map(c=>c.text).join('\n\n');
+    const curChars=stateRef.current.savedChars||chars||[];
+    const charList=curChars.length?curChars.map(c=>`${c.name} (${c.role})`).join(', '):'';
+    try{
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}\n\n${charList?`Story ke characters: ${charList}\n\n`:''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated character names jo is scene mein hain]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format.`}]})});
+      const data=await res.json();
+      const parsed=parseScenes(data.choices?.[0]?.message?.content||'');
+      if(parsed.length){setScenes(parsed);stateRef.current.savedScenes=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} scenes ready!`);}
+    }catch(e){toast('❌ Scenes: '+e.message);}
     setScenesLoading(false);
   }
 
   function parseScenes(raw) {
-    return raw.split('SCENE_START').slice(1).map(b => {
-      const blk = b.slice(0, b.indexOf('SCENE_END') > -1 ? b.indexOf('SCENE_END') : undefined);
-      const g   = (k) => { const m = blk.match(new RegExp(k + ':\\s*(.+)')); return m ? m[1].trim() : ''; };
-      return {
-        num:            g('num'),
-        title:          g('title'),
-        location:       g('location'),
-        mood:           g('mood'),
-        what:           g('what'),
-        chars_in_scene: g('chars_in_scene'),
-        imgprompt:      g('imgprompt'),
-      };
-    }).filter(s => s.title);
+    return raw.split('SCENE_START').slice(1).map(b=>{
+      const blk=b.slice(0,b.indexOf('SCENE_END')>-1?b.indexOf('SCENE_END'):undefined);
+      const g=(k)=>{const m=blk.match(new RegExp(k+':\\s*(.+)'));return m?m[1].trim():'';};
+      return {num:g('num'),title:g('title'),location:g('location'),mood:g('mood'),what:g('what'),chars_in_scene:g('chars_in_scene'),imgprompt:g('imgprompt')};
+    }).filter(s=>s.title);
   }
 
-  // ── Characters ─────────────────────────────────────
   async function generateCharsAuto(chunks) {
     setCharsLoading(true);
     const storyText=(chunks||playerChunks).map(c=>c.text).join('\n\n');
     try{
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:1500,temperature:0.3,
-          messages:[{role:'user',content:`Story: "${stateRef.current.title||''}"\n\n${storyText}\n\nIs story ke SAARE characters identify karo aur list karo.\n\nHar character ke liye:\n[{"name":"naam","role":"Hero/Villain/Supporting/Minor","desc":"2-3 lines Hindi mein character ka description","visual":"English mein: age, height, build, face, hair color, eye color, skin tone, clothing style — jo image generation ke liye use hoga. 30-40 words.","appear":"Kis scene/part mein aaya"}]\n\nSirf JSON array. Koi extra text nahi.`}],
-        })});
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:1500,temperature:0.3,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}"\n\n${storyText}\n\nIs story ke SAARE characters identify karo.\n\n[{"name":"naam","role":"Hero/Villain/Supporting/Minor","desc":"2-3 lines Hindi mein","visual":"English: age, height, build, face, hair, eye color, skin, clothing. 30-40 words.","appear":"Kis part mein aaya"}]\n\nSirf JSON array.`}]})});
       const data=await res.json();
-      const raw=data.choices?.[0]?.message?.content?.trim()||'[]';
-      const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
-      if(Array.isArray(parsed)&&parsed.length){
-        setChars(parsed);
-        stateRef.current.savedChars=parsed;
-        stateRef.current.characterBible=parsed;
-        saveEpisode(playerChunks,playerEnded);
-        toast(`✅ ${parsed.length} characters ready!`);
-      }
+      const parsed=JSON.parse((data.choices?.[0]?.message?.content?.trim()||'[]').replace(/```json|```/g,'').trim());
+      if(Array.isArray(parsed)&&parsed.length){setChars(parsed);stateRef.current.savedChars=parsed;stateRef.current.characterBible=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} characters ready!`);}
     }catch(e){toast('❌ Characters: '+e.message);}
     setCharsLoading(false);
   }
 
-  // ── Background Music Search (Pixabay) ──────────────
-  async function searchBgMusic(customQuery) {
-    // Get your free key at: https://pixabay.com/api/docs/
-    const PIXABAY_KEY = process.env.NEXT_PUBLIC_PIXABAY_KEY;
+  // ── Music: auto-fetch via /api/music route ─────────
+  async function fetchMusicAuto() {
     setBgMusicLoading(true); setBgMusic([]); setSelectedMusic(null);
-    const q = customQuery || bgMusicQuery || 'horror dark suspense';
     try {
-      const res = await fetch(
-        `https://pixabay.com/api/videos/music/?key=${PIXABAY_KEY}&q=${encodeURIComponent(q)}&per_page=8`
-      );
+      const res  = await fetch('/api/music?q=horror+dark+suspense+ambient');
       const data = await res.json();
       if (data.hits?.length) {
         setBgMusic(data.hits);
       } else {
-        toast('⚠️ Koi music nahi mila — query change karo');
+        toast('⚠️ Music nahi mila — dobara try karo');
       }
-    } catch(e) { toast('❌ Music search failed: ' + e.message); }
+    } catch(e) { toast('❌ Music: ' + e.message); }
     setBgMusicLoading(false);
   }
 
-  // ── Next Episode ─────────────────────────────────
+  // ── Next Episode ───────────────────────────────────
   async function startNextEpisode() {
-    if (playerChunks.length && activeEp) {
-      const { db_saveEpisode } = await import('../../lib/firebase');
-      await db_saveEpisode(user.uid, { ...activeEp, storyChunks: playerChunks, ended: true, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
-    }
-    const epMatch  = (activeEp?.epNum||'EP 01').match(/(\d+)/);
-    const nextNum  = 'EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
-    const bible    = (stateRef.current.seasonBible||'')+'\n\n['+(activeEp?.season||'SEASON 1')+' '+(activeEp?.epNum||'EP 01')+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
-    const newEpId  = Date.now().toString();
-    const baseTitle= (activeEp?.title||'').split(' | ')[0].trim()||activeEp?.title||'Untitled';
-    const season   = activeEp?.season||'SEASON 1';
-    const seasonFmt= season.replace('SEASON ','').padStart(2,'0');
-    const epFmt    = nextNum.replace('EP ','').padStart(2,'0');
-    const placeholderTitle = `${baseTitle} | ... | SEASON ${seasonFmt} EP ${epFmt}`;
-    const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, title:placeholderTitle, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
-    stateRef.current = { ...stateRef.current, epNum:nextNum, currentEpId:newEpId, title:placeholderTitle, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null, seasonBible:bible };
-    const { db_saveEpisode } = await import('../../lib/firebase');
-    await db_saveEpisode(user.uid, { ...newEp, savedAt: Date.now() });
-    setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
-    setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
-    setExpandedScene(null); setBgMusic([]); setSelectedMusic(null); setBgMusicQuery('');
-    await loadEpisodes();
-    setScreen('player');
+    if(playerChunks.length&&activeEp){const{db_saveEpisode}=await import('../../lib/firebase');await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});}
+    const epMatch=(activeEp?.epNum||'EP 01').match(/(\d+)/);
+    const nextNum='EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
+    const bible=(stateRef.current.seasonBible||'')+'\n\n['+(activeEp?.season||'SEASON 1')+' '+(activeEp?.epNum||'EP 01')+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
+    const newEpId=Date.now().toString();
+    const baseTitle=(activeEp?.title||'').split(' | ')[0].trim()||activeEp?.title||'Untitled';
+    const season=activeEp?.season||'SEASON 1';
+    const seasonFmt=season.replace('SEASON ','').padStart(2,'0');
+    const epFmt=nextNum.replace('EP ','').padStart(2,'0');
+    const placeholderTitle=`${baseTitle} | ... | SEASON ${seasonFmt} EP ${epFmt}`;
+    const newEp={...activeEp,epNum:nextNum,id:newEpId,title:placeholderTitle,storyChunks:[],ended:false,savedScenes:null,savedChars:null,seasonEnded:false};
+    stateRef.current={...stateRef.current,epNum:nextNum,currentEpId:newEpId,title:placeholderTitle,storyChunks:[],storyEnded:false,savedScenes:null,savedChars:null,seasonBible:bible};
+    const{db_saveEpisode}=await import('../../lib/firebase');
+    await db_saveEpisode(user.uid,{...newEp,savedAt:Date.now()});
+    setActiveEp(newEp);setPlayerChunks([]);setPlayerEnded(false);setShowEndBanner(false);
+    setWordCount(0);setScenes(null);setChars(null);setNarration('');setShowNarration(false);
+    setExpandedScene(null);setBgMusic([]);setSelectedMusic(null);
+    await loadEpisodes(); setScreen('player');
     toast('▶ '+nextNum+' shuru ho raha hai...');
   }
 
   async function endSeason() {
-    const { db_saveEpisode } = await import('../../lib/firebase');
-    for (const ep of seasonEps) {
-      await db_saveEpisode(user.uid, { ...ep, ended: true, seasonEnded: true, savedAt: Date.now() });
-    }
-    if (playerChunks.length && activeEp) {
-      await db_saveEpisode(user.uid, { ...activeEp, storyChunks: playerChunks, ended: true, seasonEnded: true, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
-    }
-    setActiveEp(prev => ({ ...prev, seasonEnded: true }));
+    const{db_saveEpisode}=await import('../../lib/firebase');
+    for(const ep of seasonEps) await db_saveEpisode(user.uid,{...ep,ended:true,seasonEnded:true,savedAt:Date.now()});
+    if(playerChunks.length&&activeEp) await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,seasonEnded:true,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});
+    setActiveEp(prev=>prev?{...prev,seasonEnded:true}:prev);
     toast('🔒 Season end ho gaya!');
     await loadEpisodes();
   }
 
+  // ── FIX: startNextSeason ───────────────────────────
   async function startNextSeason() {
-    const sMatch   = (activeEp?.season||'SEASON 1').match(/(\d+)/);
-    const nextSzn  = 'SEASON '+((sMatch?parseInt(sMatch[1]):1)+1);
-    const newEpId  = Date.now().toString();
-    const baseTitle= (activeEp?.title||'').split(' | ')[0].trim()||activeEp?.title||'Untitled';
-    const seasonFmt= String((sMatch?parseInt(sMatch[1]):1)+1).padStart(2,'0');
+    const sMatch     = (activeEp?.season||'SEASON 1').match(/(\d+)/);
+    const nextSznNum = (sMatch ? parseInt(sMatch[1]) : 1) + 1;
+    const nextSzn    = 'SEASON ' + nextSznNum;
+    const newEpId    = Date.now().toString();
+    const baseTitle  = (activeEp?.title||'').split(' | ')[0].trim() || 'Untitled';
+    const seasonFmt  = String(nextSznNum).padStart(2,'0');
     const placeholderTitle = `${baseTitle} | ... | SEASON ${seasonFmt} EP 01`;
-    const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, title:placeholderTitle, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
-    stateRef.current = { ...stateRef.current, season:nextSzn, epNum:'EP 01', currentEpId:newEpId, title:placeholderTitle, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null };
+
+    const newEp = {
+      ...activeEp,
+      season: nextSzn, epNum: 'EP 01', id: newEpId,
+      title: placeholderTitle, storyChunks: [], ended: false,
+      savedScenes: null, savedChars: null, seasonEnded: false,
+    };
+
+    stateRef.current = {
+      ...stateRef.current,
+      season: nextSzn, epNum: 'EP 01', currentEpId: newEpId,
+      title: placeholderTitle, storyChunks: [], storyEnded: false,
+      savedScenes: null, savedChars: null, seasonBible: null,
+    };
+
     const { db_saveEpisode } = await import('../../lib/firebase');
     await db_saveEpisode(user.uid, { ...newEp, savedAt: Date.now() });
-    setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
-    setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
-    setExpandedScene(null); setBgMusic([]); setSelectedMusic(null); setBgMusicQuery('');
+
+    setActiveEp(newEp);
+    setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
+    setWordCount(0); setScenes(null); setChars(null);
+    setNarration(''); setShowNarration(false); setShowAnalysis(false);
+    setExpandedScene(null); setBgMusic([]); setSelectedMusic(null);
+
     await loadEpisodes();
     setScreen('player');
-    toast('🏁 '+nextSzn+' shuru ho raha hai!');
+    toast('🏁 ' + nextSzn + ' shuru ho raha hai!');
   }
 
   async function generateFullNarration(forceRegen=false) {
-    if (!playerChunks.length) { toast('⚠️ Story nahi hai!'); return; }
-    if (narration && !forceRegen) { setShowNarration(true); return; }
-    setNarrationLoading(true); setShowNarration(true);
-    const fullStory = playerChunks.map(c=>c.text).join('\n\n');
-    try {
-      const res = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:2500, temperature:0.7,
-          messages:[
-            { role:'system', content:`Tu ek professional Hindi horror narrator hai jo ElevenLabs ke liye script likhta hai.\nSirf Hindi Devanagari. ElevenLabs break tags use karo:\n<break time="0.5s" /> <break time="1.0s" /> <break time="1.5s" /> <break time="2.0s" />\nEmotion tags: [scared] [whisper] [laugh] [cry] [angry] [shocked] [calm]` },
-            { role:'user', content:`Yeh horror story hai:\n\n${fullStory}\n\nPoori story ka ElevenLabs-ready HINDI NARRATION script likho.\n- Sirf Hindi Devanagari\n- Break tags sahi jagah lagao\n- Emotion tags use karo\n- Koi heading mat lagao, seedha narration shuru karo` },
-          ],
-        }),
-      });
-      const data = await res.json();
-      const nar  = data.choices?.[0]?.message?.content?.trim()||'';
-      if (nar) { setNarration(nar); stateRef.current.savedNarration=nar; }
-    } catch(err) { toast('❌ '+err.message); }
+    if(!playerChunks.length){toast('⚠️ Story nahi hai!');return;}
+    if(narration&&!forceRegen){setShowNarration(true);return;}
+    setNarrationLoading(true);setShowNarration(true);
+    const fullStory=playerChunks.map(c=>c.text).join('\n\n');
+    try{
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:2500,temperature:0.7,messages:[{role:'system',content:`Tu ek professional Hindi horror narrator hai jo ElevenLabs ke liye script likhta hai.\nSirf Hindi Devanagari. ElevenLabs break tags:\n<break time="0.5s" /> <break time="1.0s" /> <break time="1.5s" /> <break time="2.0s" />\nEmotion tags: [scared] [whisper] [laugh] [cry] [angry] [shocked] [calm]`},{role:'user',content:`Yeh horror story hai:\n\n${fullStory}\n\nPoori story ka ElevenLabs-ready HINDI NARRATION script likho.\n- Sirf Hindi Devanagari\n- Break tags sahi jagah lagao\n- Emotion tags use karo\n- Koi heading mat lagao`}]})});
+      const data=await res.json();
+      const nar=data.choices?.[0]?.message?.content?.trim()||'';
+      if(nar){setNarration(nar);stateRef.current.savedNarration=nar;}
+    }catch(err){toast('❌ '+err.message);}
     setNarrationLoading(false);
   }
 
-  async function generateSubtitle(ep, chunks) {
-    try {
-      const storySnippet = (chunks||[]).map(c=>c.text).join(' ').slice(0,400);
-      const baseTitle = (ep.title||'').split(' | ')[0].trim();
-      const season = ep.season||'SEASON 1';
-      const epNum  = ep.epNum||'EP 01';
-      const seasonFmt = season.replace('SEASON ','').padStart(2,'0');
-      const epFmt = epNum.replace('EP ','').padStart(2,'0');
-      const seasonEpStr = `SEASON ${seasonFmt} EP ${epFmt}`;
-      const res = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:80, temperature:0.9,
-          messages:[{ role:'user', content:`Story title: "${baseTitle}"\nStory snippet: "${storySnippet}"\n\nEk viral Hindi YouTube horror subtitle banao jo curiosity aur fear create kare.\nFormat: "क्या [kuch interesting]?" ya "[kuch dramatic]!" — 6-10 Hindi words only.\nSirf subtitle text do, koi extra text nahi.` }],
-        }),
-      });
-      const data = await res.json();
-      const subtitle = data.choices?.[0]?.message?.content?.trim()||'';
-      if (!subtitle) return null;
-      return `${baseTitle} | ${subtitle} | ${seasonEpStr}`;
-    } catch { return null; }
+  async function generateSubtitle(ep,chunks) {
+    try{
+      const storySnippet=(chunks||[]).map(c=>c.text).join(' ').slice(0,400);
+      const baseTitle=(ep.title||'').split(' | ')[0].trim();
+      const season=ep.season||'SEASON 1',epNum=ep.epNum||'EP 01';
+      const seasonFmt=season.replace('SEASON ','').padStart(2,'0');
+      const epFmt=epNum.replace('EP ','').padStart(2,'0');
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:80,temperature:0.9,messages:[{role:'user',content:`Story title: "${baseTitle}"\nStory snippet: "${storySnippet}"\n\nEk viral Hindi YouTube horror subtitle banao.\nFormat: "क्या [kuch]?" ya "[kuch dramatic]!" — 6-10 Hindi words only.\nSirf subtitle text do.`}]})});
+      const data=await res.json();
+      const subtitle=data.choices?.[0]?.message?.content?.trim()||'';
+      if(!subtitle) return null;
+      return `${baseTitle} | ${subtitle} | SEASON ${seasonFmt} EP ${epFmt}`;
+    }catch{return null;}
   }
 
   function scrollBottom(){setTimeout(()=>{if(storyAreaRef.current)storyAreaRef.current.scrollTop=storyAreaRef.current.scrollHeight;},50);}
   function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('✅ Copied!'));}
 
-  function buildScenePrompt(scene, charList) {
-    if (!charList?.length) return scene.imgprompt || '';
-    const mentioned = charList.filter(c =>
-      scene.what?.includes(c.name) || scene.imgprompt?.toLowerCase().includes(c.name.toLowerCase())
-    );
-    const refs = mentioned.length ? mentioned : charList.slice(0,2);
-    let refText = '';
-    if (refs.length === 1) refText = `Use reference image #${charList.indexOf(refs[0])+1} for ${refs[0].name}.`;
-    else refText = `Use these reference characters: ${refs.map((c,i)=>`reference image #${charList.indexOf(c)+1} for ${c.name}`).join(', ')}.`;
-    return `${scene.imgprompt||''} ${refText}`;
-  }
-
   const storyList  = Object.entries(groups);
-  const seasonMap  = screen !== 'stories' ? getSeasonsForStory(curStory) : {};
+  const seasonMap  = screen!=='stories'?getSeasonsForStory(curStory):{};
   const seasonList = Object.entries(seasonMap);
   const breadcrumb = [
     {label:'My Stories',sc:'stories'},
@@ -494,24 +432,18 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
   ];
   const TARGET=1500;
   const wcPct=Math.min(100,(wordCount/TARGET)*100);
-  const seasonEnded = activeEp?.seasonEnded || seasonEps.every(e => e.ended && e.seasonEnded) || false;
+  const seasonEnded=activeEp?.seasonEnded||seasonEps.every(e=>e.ended&&e.seasonEnded)||false;
 
-  // ─── RENDER ────────────────────────────────────────
   return (
     <>
       <SideDrawer open={drawerOpen} onClose={()=>setDrawerOpen(false)} user={user}/>
-
       <div className="page-content" style={{background:'var(--void)'}}>
 
-        {/* ── Breadcrumb topbar ── */}
+        {/* Topbar */}
         <div style={{display:'flex',alignItems:'center',height:52,padding:'0 12px',gap:6,background:'rgba(10,0,10,0.97)',borderBottom:'1px solid #1a0015',position:'sticky',top:0,zIndex:100}}>
           {screen==='stories'
-            ? <button className="hamburger-btn" onClick={()=>setDrawerOpen(true)} style={{flexShrink:0}}>☰</button>
-            : <button onClick={()=>{
-                if(screen==='player') setScreen('episodes');
-                else if(screen==='episodes') setScreen('seasons');
-                else setScreen('stories');
-              }} style={{background:'none',border:'none',color:'#888',fontSize:20,cursor:'pointer',padding:'4px 8px',flexShrink:0}}>←</button>
+            ?<button className="hamburger-btn" onClick={()=>setDrawerOpen(true)} style={{flexShrink:0}}>☰</button>
+            :<button onClick={()=>{if(screen==='player')setScreen('episodes');else if(screen==='episodes')setScreen('seasons');else setScreen('stories');}} style={{background:'none',border:'none',color:'#888',fontSize:20,cursor:'pointer',padding:'4px 8px',flexShrink:0}}>←</button>
           }
           <div style={{flex:1,display:'flex',alignItems:'center',overflow:'hidden'}}>
             {breadcrumb.map((crumb,i)=>(
@@ -531,10 +463,9 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
           <div style={{width:screen==='player'?0:36,flexShrink:0}}/>
         </div>
 
-        {/* ── CONTENT ── */}
         <div style={{flex:1,overflowY:'auto',padding:screen==='player'?0:12}}>
 
-          {/* ── Level 1: Stories ── */}
+          {/* Level 1: Stories */}
           {screen==='stories'&&(
             <>
               {loading&&<div style={{textAlign:'center',padding:'60px 20px',color:'#333'}}><div className="spinner" style={{margin:'0 auto 12px'}}/>Loading...</div>}
@@ -547,12 +478,7 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {storyList.map(([baseTitle,epList])=>{
                   const totalSeasons=new Set(epList.map(e=>e.season||'SEASON 1')).size;
-                  const words=epList.reduce((s,e)=>s+(e.wordCount||0),0);
-                  const latest=epList.sort((a,b)=>(b.savedAt||0)-(a.savedAt||0))[0];
-                  const totalViews=epList.reduce((sum,ep)=>{
-                    const info=getEpYtInfo(ep);
-                    return sum+(info?.video.viewCount||0);
-                  },0);
+                  const totalViews=epList.reduce((sum,ep)=>{const info=getEpYtInfo(ep);return sum+(info?.video.viewCount||0);},0);
                   return(
                     <div key={baseTitle} style={{background:'#0d000d',border:'1px solid #2a0022',borderRadius:12,padding:14,cursor:'pointer',position:'relative'}}
                       onMouseEnter={e=>e.currentTarget.style.borderColor='#550033'}
@@ -569,41 +495,24 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                         </div>
                         <span style={{fontSize:18,color:'#330022',flexShrink:0}}>›</span>
                       </div>
-                      {/* Delete story button */}
-                      <button
-                        onClick={e=>{e.stopPropagation();setDeleteConfirmStory(baseTitle);setDeleteInput('');}}
+                      <button onClick={e=>{e.stopPropagation();setDeleteConfirmStory(baseTitle);setDeleteInput('');}}
                         style={{position:'absolute',top:10,right:10,background:'rgba(80,0,0,0.18)',border:'1px solid #330000',color:'#553333',fontSize:13,padding:'4px 8px',borderRadius:7,cursor:'pointer'}}>🗑</button>
                     </div>
                   );
                 })}
               </div>
-              {/* ── Delete Story Modal ── */}
-              {deleteConfirmStory && (
+              {deleteConfirmStory&&(
                 <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
                   <div style={{background:'#0d000d',border:'1px solid #550000',borderRadius:14,padding:20,width:'100%',maxWidth:340}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#cc2222',marginBottom:6,letterSpacing:1}}>🗑 STORY DELETE KARO</div>
-                    <div style={{fontSize:12,color:'#888',marginBottom:4,lineHeight:1.6}}>
-                      <span style={{color:'#ddd',fontWeight:600}}>"{deleteConfirmStory}"</span> aur iske saare episodes, scenes, aur characters permanently delete ho jayenge.
-                    </div>
-                    <div style={{fontSize:11,color:'#555',marginBottom:12}}>Confirm karne ke liye <span style={{color:'#cc4444',fontWeight:700}}>DELETE</span> likho:</div>
-                    <input
-                      value={deleteInput}
-                      onChange={e=>setDeleteInput(e.target.value)}
-                      placeholder="DELETE"
-                      style={{width:'100%',background:'#0a0000',border:`1px solid ${deleteInput==='DELETE'?'#cc0000':'#330000'}`,color:'#fff',padding:'10px 12px',borderRadius:8,fontSize:13,outline:'none',marginBottom:12,boxSizing:'border-box',fontFamily:'monospace',letterSpacing:2}}
-                    />
+                    <div style={{fontSize:13,fontWeight:700,color:'#cc2222',marginBottom:6}}>🗑 STORY DELETE KARO</div>
+                    <div style={{fontSize:12,color:'#888',marginBottom:4,lineHeight:1.6}}><span style={{color:'#ddd',fontWeight:600}}>"{deleteConfirmStory}"</span> permanently delete ho jayega.</div>
+                    <div style={{fontSize:11,color:'#555',marginBottom:12}}>Confirm ke liye <span style={{color:'#cc4444',fontWeight:700}}>DELETE</span> likho:</div>
+                    <input value={deleteInput} onChange={e=>setDeleteInput(e.target.value)} placeholder="DELETE"
+                      style={{width:'100%',background:'#0a0000',border:`1px solid ${deleteInput==='DELETE'?'#cc0000':'#330000'}`,color:'#fff',padding:'10px 12px',borderRadius:8,fontSize:13,outline:'none',marginBottom:12,boxSizing:'border-box',fontFamily:'monospace',letterSpacing:2}}/>
                     <div style={{display:'flex',gap:8}}>
-                      <button
-                        onClick={()=>{setDeleteConfirmStory(null);setDeleteInput('');}}
-                        style={{flex:1,background:'transparent',border:'1px solid #333',color:'#666',padding:'10px',borderRadius:8,fontSize:12,cursor:'pointer'}}>
-                        Cancel
-                      </button>
-                      <button
-                        onClick={()=>confirmDeleteStory(deleteConfirmStory)}
-                        disabled={deleteInput!=='DELETE'}
-                        style={{flex:1,background:deleteInput==='DELETE'?'linear-gradient(135deg,#880000,#550000)':'#1a0000',border:`1px solid ${deleteInput==='DELETE'?'#cc0000':'#330000'}`,color:deleteInput==='DELETE'?'#fff':'#444',padding:'10px',borderRadius:8,fontSize:12,cursor:deleteInput==='DELETE'?'pointer':'not-allowed',fontWeight:700}}>
-                        🗑 Delete Karo
-                      </button>
+                      <button onClick={()=>{setDeleteConfirmStory(null);setDeleteInput('');}} style={{flex:1,background:'transparent',border:'1px solid #333',color:'#666',padding:'10px',borderRadius:8,fontSize:12,cursor:'pointer'}}>Cancel</button>
+                      <button onClick={()=>confirmDeleteStory(deleteConfirmStory)} disabled={deleteInput!=='DELETE'}
+                        style={{flex:1,background:deleteInput==='DELETE'?'linear-gradient(135deg,#880000,#550000)':'#1a0000',border:`1px solid ${deleteInput==='DELETE'?'#cc0000':'#330000'}`,color:deleteInput==='DELETE'?'#fff':'#444',padding:'10px',borderRadius:8,fontSize:12,cursor:deleteInput==='DELETE'?'pointer':'not-allowed',fontWeight:700}}>🗑 Delete Karo</button>
                     </div>
                   </div>
                 </div>
@@ -611,12 +520,11 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
             </>
           )}
 
-          {/* ── Level 2: Seasons ── */}
+          {/* Level 2: Seasons */}
           {screen==='seasons'&&(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {seasonList.map(([season,sEps])=>{
                 const allDone=sEps.every(e=>e.ended);
-                const words=sEps.reduce((s,e)=>s+(e.wordCount||0),0);
                 const totalViews=sEps.reduce((sum,ep)=>{const info=getEpYtInfo(ep);return sum+(info?.video.viewCount||0);},0);
                 return(
                   <div key={season} onClick={()=>{setCurSeason(season);setSeasonEps(sEps.sort((a,b)=>(a.epNum||'').localeCompare(b.epNum||'')));setScreen('episodes');}}
@@ -643,78 +551,52 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
             </div>
           )}
 
-          {/* ── Level 3: Episodes ── */}
+          {/* Level 3: Episodes */}
           {screen==='episodes'&&(
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
               {seasonEps.map(ep=>{
-                const epYtTitle=(ep.title||'').split(' | ')[1]||ep.title||'Untitled';
                 const savedDate=ep.savedAt?new Date(ep.savedAt).toLocaleDateString('hi-IN'):'';
                 const ytInfo=getEpYtInfo(ep);
                 const isTrending=ytInfo&&ytInfo.rank===1;
                 const seasonDone=seasonEps.every(e=>e.ended);
                 return(
                   <div key={ep.id} onClick={()=>openEpisode(ep)}
-                    style={{background: isTrending?'rgba(255,60,0,0.05)':'#080008',border:`1px solid ${isTrending?'#661100':'#1a0015'}`,borderRadius:12,padding:14,cursor:'pointer',display:'flex',alignItems:'center',gap:12,position:'relative'}}
+                    style={{background:isTrending?'rgba(255,60,0,0.05)':'#080008',border:`1px solid ${isTrending?'#661100':'#1a0015'}`,borderRadius:12,padding:14,cursor:'pointer',display:'flex',alignItems:'center',gap:12,position:'relative'}}
                     onMouseEnter={e=>e.currentTarget.style.borderColor=isTrending?'#aa2200':'#440033'}
                     onMouseLeave={e=>e.currentTarget.style.borderColor=isTrending?'#661100':'#1a0015'}>
-
                     {isTrending&&<div style={{position:'absolute',top:-6,right:10,background:'linear-gradient(135deg,#cc3300,#880000)',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:800,color:'#fff',letterSpacing:1}}>🔥 #1 TRENDING</div>}
-
                     <div style={{width:40,height:40,borderRadius:10,background:ep.ended?'linear-gradient(135deg,#003300,#001a00)':isTrending?'linear-gradient(135deg,#331100,#1a0800)':'linear-gradient(135deg,#1a0000,#0d0000)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,border:`1px solid ${ep.ended?'#004400':isTrending?'#551100':'#330000'}`}}>
                       {isTrending?'🔥':ep.ended?'✅':'📝'}
                     </div>
-
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
                         <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5,textTransform:'uppercase'}}>{ep.epNum||'EP 01'}</span>
-                        <span style={{fontSize:9,color:ep.ended?'#44bb66':'#cc8822',background:ep.ended?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${ep.ended?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>
-                          {ep.ended?(seasonDone?'🔒 Locked':'Done'):'Ongoing'}
-                        </span>
+                        <span style={{fontSize:9,color:ep.ended?'#44bb66':'#cc8822',background:ep.ended?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${ep.ended?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>{ep.ended?(seasonDone?'🔒 Locked':'Done'):'Ongoing'}</span>
                       </div>
-                      {(() => {
-                        const parts = (ep.title||'').split(' | ');
-                        const mainT = parts[0]||'Untitled';
-                        const subT  = parts[1]&&parts[1]!=='...'?parts[1]:null;
-                        return (
-                          <>
-                            <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>
-                            {subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>{subT}</div>}
-                          </>
-                        );
-                      })()}
+                      {(()=>{const parts=(ep.title||'').split(' | ');const mainT=parts[0]||'Untitled';const subT=parts[1]&&parts[1]!=='...'?parts[1]:null;return(<><div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>{subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>{subT}</div>}</>);})()}
                       <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
                         <span style={{fontSize:10,color:'#444'}}>{ep.wordCount||0} words</span>
                         {savedDate&&<span style={{fontSize:10,color:'#333'}}>· {savedDate}</span>}
                         {ytInfo?(
-                          <a href={`https://youtube.com/watch?v=${ytInfo.video.videoId}`} target="_blank"
-                            onClick={e=>e.stopPropagation()}
+                          <a href={`https://youtube.com/watch?v=${ytInfo.video.videoId}`} target="_blank" onClick={e=>e.stopPropagation()}
                             style={{fontSize:10,color:'#ff4444',fontWeight:700,textDecoration:'none',display:'inline-flex',alignItems:'center',gap:3}}>
                             ▶ {fmtViews(ytInfo.video.viewCount)} views
-                            <span style={{color:ytInfo.rank===1?'#ffcc00':ytInfo.rank<=3?'#ff8844':'#666',fontWeight:800}}>
-                              {ytInfo.rank===1?'🥇':ytInfo.rank===2?'🥈':ytInfo.rank===3?'🥉':`#${ytInfo.rank}`}
-                            </span>
+                            <span style={{color:ytInfo.rank===1?'#ffcc00':ytInfo.rank<=3?'#ff8844':'#666',fontWeight:800}}>{ytInfo.rank===1?'🥇':ytInfo.rank===2?'🥈':ytInfo.rank===3?'🥉':`#${ytInfo.rank}`}</span>
                           </a>
-                        ):(
-                          <span style={{fontSize:10,color:'#333'}}>❌ Not uploaded</span>
-                        )}
+                        ):<span style={{fontSize:10,color:'#333'}}>❌ Not uploaded</span>}
                       </div>
                     </div>
-
-                    {!ytInfo&&(
-                      <button onClick={e=>{e.stopPropagation();deleteEpisode(ep.id);}}
-                        style={{flexShrink:0,background:'rgba(80,0,0,0.2)',border:'1px solid #330000',color:'#553333',fontSize:14,padding:'8px 10px',borderRadius:8,cursor:'pointer'}}>🗑</button>
-                    )}
+                    {!ytInfo&&<button onClick={e=>{e.stopPropagation();deleteEpisode(ep.id);}} style={{flexShrink:0,background:'rgba(80,0,0,0.2)',border:'1px solid #330000',color:'#553333',fontSize:14,padding:'8px 10px',borderRadius:8,cursor:'pointer'}}>🗑</button>}
                   </div>
                 );
               })}
             </div>
           )}
 
-          {/* ── Level 4: Inline Player ── */}
+          {/* Level 4: Player */}
           {screen==='player'&&activeEp&&(
             <div style={{display:'flex',flexDirection:'column',minHeight:'calc(100dvh - 52px)'}}>
 
-              {/* Story area */}
               {!showAnalysis&&(
                 <>
                   <div className="story-area" ref={storyAreaRef} style={{flex:1}}>
@@ -748,20 +630,14 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                               <div style={{fontSize:10,color:'#44bb66',letterSpacing:2,textTransform:'uppercase'}}>🎙 ElevenLabs Narration</div>
                               <button onClick={()=>generateFullNarration(true)} style={{background:'transparent',border:'1px solid #555',color:'#888',fontSize:10,padding:'4px 10px',borderRadius:6,cursor:'pointer'}}>🔄 Dobara</button>
                             </div>
-                            {narrationLoading
-                              ? <div style={{display:'flex',alignItems:'center',gap:8,color:'#44bb66',fontSize:12}}><div className="spinner"/>Narration ban rahi hai...</div>
-                              : <div style={{fontSize:14,color:'#c8e8c8',lineHeight:1.9,whiteSpace:'pre-wrap'}}>{narration}</div>
-                            }
-                            {narration&&!narrationLoading&&(
-                              <button onClick={()=>copyText(narration)} style={{marginTop:12,background:'transparent',border:'1px solid #44bb66',color:'#44bb66',padding:'6px 14px',borderRadius:6,fontSize:12,cursor:'pointer'}}>📋 ElevenLabs ke liye Copy</button>
-                            )}
+                            {narrationLoading?<div style={{display:'flex',alignItems:'center',gap:8,color:'#44bb66',fontSize:12}}><div className="spinner"/>Narration ban rahi hai...</div>:<div style={{fontSize:14,color:'#c8e8c8',lineHeight:1.9,whiteSpace:'pre-wrap'}}>{narration}</div>}
+                            {narration&&!narrationLoading&&<button onClick={()=>copyText(narration)} style={{marginTop:12,background:'transparent',border:'1px solid #44bb66',color:'#44bb66',padding:'6px 14px',borderRadius:6,fontSize:12,cursor:'pointer'}}>📋 ElevenLabs ke liye Copy</button>}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Word count */}
                   <div style={{padding:'0 16px 4px',background:'var(--panel)',borderTop:'1px solid var(--border)'}}>
                     <div className="wordcount-bar">
                       <span className="wc-label">{wordCount} words</span>
@@ -770,7 +646,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                     </div>
                   </div>
 
-                  {/* Bottom bar */}
                   <div className="bottom-bar">
                     {seasonEnded||playerEnded?(
                       <div style={{textAlign:'center',padding:'8px',color:'#553333',fontSize:12}}>
@@ -803,232 +678,164 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
               {showAnalysis&&(
                 <div className="analysis-content" style={{flex:1,paddingBottom:80}}>
 
-                  {/* Characters — NO generate button, auto on story end */}
+                  {/* Characters */}
                   <div className="analysis-panel">
-                    <div className="analysis-generate-bar">
-                      <div style={{fontSize:11,color:'#888',fontWeight:700,marginBottom:4}}>👤 CHARACTERS</div>
-                      <div className="analysis-hint">
-                        Har character ka reference image prompt yahan milega.
-                        {chars?.length>0
-                          ? <span style={{color:'#44bb66'}}> {chars.length} characters ready.</span>
-                          : <span style={{color:'#555'}}> Story end karo — auto generate ho jayega.</span>
-                        }
-                      </div>
-                    </div>
-                    {chars?.map((c,i)=>(
-                      <div key={i} className="char-card">
-                        <div className="char-name">
-                          <span style={{fontSize:12,color:'#666',marginRight:4}}>#{i+1}</span>
-                          {c.name}<span className="char-role-badge">{c.role}</span>
+                    <PanelHeader icon="👤" title="CHARACTERS" open={showCharsPanel} onToggle={()=>setShowCharsPanel(o=>!o)}/>
+                    {showCharsPanel&&(
+                      <>
+                        <div className="analysis-hint" style={{marginBottom:8}}>
+                          {chars?.length>0
+                            ?<span style={{color:'#44bb66'}}>{chars.length} characters ready.</span>
+                            :<span style={{color:'#555'}}>Story end karo — auto generate ho jayega.</span>
+                          }
                         </div>
-                        <div className="char-desc">{c.desc}</div>
-                        {c.visual&&(
-                          <div style={{background:'#0a000f',border:'1px solid #2a003a',borderRadius:8,padding:'8px 10px',marginTop:6}}>
-                            <div style={{fontSize:9,color:'#bb66ff',letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>🖼 Reference Image Prompt #{i+1}</div>
-                            <div style={{fontSize:12,color:'#c8c8c8',lineHeight:1.7}}>{c.visual}</div>
-                            <button onClick={()=>copyText(c.visual)} style={{marginTop:6,background:'transparent',border:'1px solid #440066',color:'#cc88ff',padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer'}}>📋 Copy Visual Prompt</button>
+                        {chars?.map((c,i)=>(
+                          <div key={i} className="char-card">
+                            <div className="char-name"><span style={{fontSize:12,color:'#666',marginRight:4}}>#{i+1}</span>{c.name}<span className="char-role-badge">{c.role}</span></div>
+                            <div className="char-desc">{c.desc}</div>
+                            {c.visual&&(
+                              <div style={{background:'#0a000f',border:'1px solid #2a003a',borderRadius:8,padding:'8px 10px',marginTop:6}}>
+                                <div style={{fontSize:9,color:'#bb66ff',letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>🖼 Reference Image Prompt #{i+1}</div>
+                                <div style={{fontSize:12,color:'#c8c8c8',lineHeight:1.7}}>{c.visual}</div>
+                                <button onClick={()=>copyText(c.visual)} style={{marginTop:6,background:'transparent',border:'1px solid #440066',color:'#cc88ff',padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer'}}>📋 Copy Visual Prompt</button>
+                              </div>
+                            )}
+                            {c.appear&&<div className="char-appear">📍 {c.appear}</div>}
                           </div>
-                        )}
-                        {c.appear&&<div className="char-appear">📍 {c.appear}</div>}
-                      </div>
-                    ))}
+                        ))}
+                      </>
+                    )}
                   </div>
 
                   {/* Background Music */}
                   <div className="analysis-panel" style={{marginTop:12}}>
-                    <div className="analysis-generate-bar">
-                      <div style={{fontSize:11,color:'#888',fontWeight:700,marginBottom:4}}>🎵 BACKGROUND MUSIC</div>
-                      <div className="analysis-hint" style={{marginBottom:8}}>
-                        Episode ke liye free non-copyrighted music — preview karo aur download karo.
-                      </div>
-                      {/* Quick tags */}
-                      <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}}>
-                        {['horror dark','suspense tension','haunted ambient','scary thriller','ghost mystery'].map(tag=>(
-                          <button key={tag} onClick={()=>{setBgMusicQuery(tag);searchBgMusic(tag);}}
-                            style={{background:'#1a000a',border:'1px solid #440022',color:'#cc4466',borderRadius:20,
-                              fontSize:10,padding:'3px 8px',cursor:'pointer',whiteSpace:'nowrap'}}>
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                      {/* Custom search */}
-                      <div style={{display:'flex',gap:6}}>
-                        <input
-                          value={bgMusicQuery}
-                          onChange={e=>setBgMusicQuery(e.target.value)}
-                          onKeyDown={e=>e.key==='Enter'&&searchBgMusic()}
-                          placeholder="Custom search... (e.g. dark ambient)"
-                          style={{flex:1,background:'#0a0000',border:'1px solid #330000',color:'#ddd',
-                            padding:'8px 10px',borderRadius:8,fontSize:12,outline:'none'}}
-                        />
-                        <button onClick={()=>searchBgMusic()} disabled={bgMusicLoading}
-                          style={{background:'linear-gradient(135deg,#660022,#330011)',border:'1px solid #880033',
-                            color:'#fff',padding:'8px 14px',borderRadius:8,fontSize:12,cursor:'pointer',flexShrink:0}}>
-                          {bgMusicLoading?<div className="spinner"/>:'🔍'}
+                    <PanelHeader
+                      icon="🎵" title="BACKGROUND MUSIC"
+                      open={showMusicPanel} onToggle={()=>setShowMusicPanel(o=>!o)}
+                      rightEl={showMusicPanel&&(
+                        <button onClick={fetchMusicAuto} disabled={bgMusicLoading}
+                          style={{background:'transparent',border:'1px solid #440022',color:'#cc4466',fontSize:10,padding:'3px 8px',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                          {bgMusicLoading?<div className="spinner" style={{width:10,height:10}}/>:'🔄'} Dobara
                         </button>
-                      </div>
-                    </div>
-
-                    {bgMusicLoading&&(
-                      <div style={{display:'flex',alignItems:'center',gap:8,color:'#cc4466',fontSize:12,padding:'12px 0'}}>
-                        <div className="spinner"/>Music dhoondh raha hai...
-                      </div>
-                    )}
-
-                    {bgMusic.length>0&&(
-                      <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:10}}>
-                        {bgMusic.map((track,ti)=>(
-                          <div key={ti}
-                            style={{background:selectedMusic?.id===track.id?'rgba(136,0,34,0.15)':'#0a0005',
-                              border:`1px solid ${selectedMusic?.id===track.id?'#880022':'#220011'}`,
-                              borderRadius:10,padding:'10px 12px',cursor:'pointer',transition:'border-color 0.2s'}}
-                            onClick={()=>setSelectedMusic(prev=>prev?.id===track.id?null:track)}>
-                            <div style={{display:'flex',alignItems:'center',gap:8}}>
-                              <span style={{fontSize:16,flexShrink:0}}>{selectedMusic?.id===track.id?'🎵':'🎼'}</span>
-                              <div style={{flex:1,minWidth:0}}>
-                                <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                                  {track.tags?.split(',').slice(0,3).join(', ')||'Track '+(ti+1)}
+                      )}
+                    />
+                    {showMusicPanel&&(
+                      <>
+                        <div className="analysis-hint" style={{marginBottom:10}}>
+                          {bgMusic.length===0&&!bgMusicLoading
+                            ?<span style={{color:'#555'}}>Story end hone pe auto fetch hoga. Ya "Dobara" tap karo. 👆</span>
+                            :<span style={{color:'#555'}}>Tap karo preview ke liye — download karo aur use karo.</span>
+                          }
+                        </div>
+                        {bgMusicLoading&&<div style={{display:'flex',alignItems:'center',gap:8,color:'#cc4466',fontSize:12,padding:'8px 0'}}><div className="spinner"/>Music dhoondh raha hai...</div>}
+                        {bgMusic.length>0&&(
+                          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                            {bgMusic.map((track,ti)=>(
+                              <div key={ti}
+                                style={{background:selectedMusic?.id===track.id?'rgba(136,0,34,0.15)':'#0a0005',border:`1px solid ${selectedMusic?.id===track.id?'#880022':'#220011'}`,borderRadius:10,padding:'10px 12px',cursor:'pointer'}}
+                                onClick={()=>setSelectedMusic(prev=>prev?.id===track.id?null:track)}>
+                                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                  <span style={{fontSize:16,flexShrink:0}}>{selectedMusic?.id===track.id?'🎵':'🎼'}</span>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{track.tags?.split(',').slice(0,3).join(', ')||'Track '+(ti+1)}</div>
+                                    <div style={{fontSize:10,color:'#555',marginTop:2}}>{track.duration}s · Free · No Copyright</div>
+                                  </div>
+                                  <a href={track.audio} download target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}
+                                    style={{background:'linear-gradient(135deg,#003300,#001a00)',border:'1px solid #004400',color:'#44bb66',borderRadius:6,padding:'6px 10px',fontSize:11,textDecoration:'none',fontWeight:700,flexShrink:0}}>⬇ DL</a>
                                 </div>
-                                <div style={{fontSize:10,color:'#555',marginTop:2}}>
-                                  {track.duration}s · Free · No Copyright
-                                </div>
+                                {selectedMusic?.id===track.id&&(
+                                  <div style={{marginTop:8}}>
+                                    <audio controls src={track.audio} style={{width:'100%',height:32,marginBottom:6}}/>
+                                    <a href={track.audio} download target="_blank" rel="noreferrer"
+                                      style={{display:'block',background:'linear-gradient(135deg,#004400,#002200)',border:'1px solid #006600',color:'#44ee66',borderRadius:8,padding:'8px',fontSize:12,textAlign:'center',textDecoration:'none',fontWeight:700}}>⬇ Full Download Karo</a>
+                                    <div style={{fontSize:10,color:'#444',marginTop:4,textAlign:'center'}}>Pixabay Music — Free commercial use · No attribution required</div>
+                                  </div>
+                                )}
                               </div>
-                              <a href={track.audio} download target="_blank" rel="noreferrer"
-                                onClick={e=>e.stopPropagation()}
-                                style={{background:'linear-gradient(135deg,#003300,#001a00)',border:'1px solid #004400',
-                                  color:'#44bb66',borderRadius:6,padding:'6px 10px',fontSize:11,
-                                  textDecoration:'none',fontWeight:700,flexShrink:0}}>
-                                ⬇ DL
-                              </a>
-                            </div>
-                            {selectedMusic?.id===track.id&&(
-                              <div style={{marginTop:8}}>
-                                <audio controls src={track.audio} style={{width:'100%',height:32,marginBottom:6}}/>
-                                <a href={track.audio} download target="_blank" rel="noreferrer"
-                                  style={{display:'block',background:'linear-gradient(135deg,#004400,#002200)',
-                                    border:'1px solid #006600',color:'#44ee66',borderRadius:8,padding:'8px',
-                                    fontSize:12,textAlign:'center',textDecoration:'none',fontWeight:700}}>
-                                  ⬇ Full Download Karo
-                                </a>
-                                <div style={{fontSize:10,color:'#444',marginTop:4,textAlign:'center'}}>
-                                  Pixabay Music — Free for commercial use · No attribution required
-                                </div>
-                              </div>
-                            )}
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     )}
                   </div>
 
-                  {/* Scenes — accordion */}
+                  {/* Scenes */}
                   <div className="analysis-panel" style={{marginTop:12}}>
-                    <div className="analysis-generate-bar">
-                      <div style={{fontSize:11,color:'#888',fontWeight:700,marginBottom:4}}>🎬 SCENES</div>
-                      <div className="analysis-hint">
-                        Scene tap karo — prompts dekhne ke liye.
-                        {chars?.length>0&&<span style={{color:'#44bb66'}}> Character references included.</span>}
-                      </div>
-                      <button className="btn btn-primary" onClick={()=>generateScenesAuto()} disabled={scenesLoading||!playerChunks.length}>
-                        {scenesLoading?<><div className="spinner"/>Scenes ban rahe hain...</>:'🎬 Scene Breakdown Generate Karo'}
-                      </button>
-                    </div>
-
-                    {scenes?.length>0&&(
-                      <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:10}}>
-                        {scenes.map((s,i)=>{
-                          const isOpen = expandedScene===i;
-                          const sceneChars = s.chars_in_scene
-                            ? s.chars_in_scene.split(',').map(n=>n.trim()).filter(Boolean)
-                            : [];
-                          const charPrompts = sceneChars.map(name=>{
-                            const found=(chars||[]).find(c=>c.name?.toLowerCase()===name.toLowerCase());
-                            const visual=found?.visual||found?.desc||'';
-                            return `full body character sheet, front and back view, ${name}${visual?', '+visual:''}, webtoon 2D flat illustration, clean lineart, white background, character reference sheet, multiple expressions, multiple poses, consistent design across all poses, same face same outfit same colors in every pose, turnaround sheet`;
-                          });
-                          const imagePrompt = s.imgprompt||'';
-                          const videoPrompt = `Convert this illustration to a short animated video clip (3-5 seconds). Subtle motion only — eyes blinking, cloth movement, hair sway, atmospheric fog. Maintain the exact webtoon 2D flat illustration style. No camera movement. Dark horror atmosphere. Keep all character appearances identical to the reference image.${sceneChars.length?` Characters present: ${sceneChars.join(', ')}.`:''}`;
-
-                          return (
-                            <div key={i}
-                              style={{background:isOpen?'rgba(80,0,20,0.12)':'#080008',
-                                border:`1px solid ${isOpen?'#660022':'#1a0015'}`,
-                                borderRadius:12,overflow:'hidden',transition:'border-color 0.2s'}}>
-
-                              {/* Scene header — tap to toggle */}
-                              <div onClick={()=>setExpandedScene(isOpen?null:i)}
-                                style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}>
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                                    <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5}}>🎬 SCENE {s.num}</span>
-                                    <span style={{fontSize:9,color:'#444',letterSpacing:1}}>{(s.mood||'').toUpperCase()}</span>
+                    <PanelHeader icon="🎬" title="SCENES" open={showScenesPanel} onToggle={()=>setShowScenesPanel(o=>!o)}/>
+                    {showScenesPanel&&(
+                      <>
+                        <div className="analysis-hint" style={{marginBottom:8}}>
+                          Scene tap karo — prompts dekhne ke liye.
+                          {chars?.length>0&&<span style={{color:'#44bb66'}}> Character references included.</span>}
+                        </div>
+                        <button className="btn btn-primary" onClick={()=>generateScenesAuto()} disabled={scenesLoading||!playerChunks.length}>
+                          {scenesLoading?<><div className="spinner"/>Scenes ban rahe hain...</>:'🎬 Scene Breakdown Generate Karo'}
+                        </button>
+                        {scenes?.length>0&&(
+                          <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:10}}>
+                            {scenes.map((s,i)=>{
+                              const isOpen=expandedScene===i;
+                              const sceneChars=s.chars_in_scene?s.chars_in_scene.split(',').map(n=>n.trim()).filter(Boolean):[];
+                              const charPrompts=sceneChars.map(name=>{
+                                const found=(chars||[]).find(c=>c.name?.toLowerCase()===name.toLowerCase());
+                                const visual=found?.visual||found?.desc||'';
+                                return `full body character sheet, front and back view, ${name}${visual?', '+visual:''}, webtoon 2D flat illustration, clean lineart, white background, character reference sheet, multiple expressions, multiple poses, consistent design across all poses, same face same outfit same colors in every pose, turnaround sheet`;
+                              });
+                              const imagePrompt=s.imgprompt||'';
+                              const videoPrompt=`Convert this illustration to a short animated video clip (3-5 seconds). Subtle motion only — eyes blinking, cloth movement, hair sway, atmospheric fog. Maintain the exact webtoon 2D flat illustration style. No camera movement. Dark horror atmosphere. Keep all character appearances identical to the reference image.${sceneChars.length?` Characters present: ${sceneChars.join(', ')}.`:''}`;
+                              return(
+                                <div key={i} style={{background:isOpen?'rgba(80,0,20,0.12)':'#080008',border:`1px solid ${isOpen?'#660022':'#1a0015'}`,borderRadius:12,overflow:'hidden'}}>
+                                  <div onClick={()=>setExpandedScene(isOpen?null:i)} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                                        <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5}}>🎬 SCENE {s.num}</span>
+                                        <span style={{fontSize:9,color:'#444',letterSpacing:1}}>{(s.mood||'').toUpperCase()}</span>
+                                      </div>
+                                      <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.title}</div>
+                                      <div style={{fontSize:10,color:'#555',marginTop:2}}>📍 {s.location}</div>
+                                    </div>
+                                    {sceneChars.length>0&&(
+                                      <div style={{display:'flex',gap:3,flexShrink:0}}>
+                                        {sceneChars.slice(0,2).map((name,ci)=>(
+                                          <span key={ci} style={{fontSize:9,padding:'2px 6px',background:'#1a0000',border:'1px solid #440000',borderRadius:20,color:'#cc4444'}}>👤{name.split(' ')[0]}</span>
+                                        ))}
+                                        {sceneChars.length>2&&<span style={{fontSize:9,color:'#444',alignSelf:'center'}}>+{sceneChars.length-2}</span>}
+                                      </div>
+                                    )}
+                                    <span style={{fontSize:16,color:'#440022',flexShrink:0,marginLeft:4}}>{isOpen?'▲':'▼'}</span>
                                   </div>
-                                  <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.title}</div>
-                                  <div style={{fontSize:10,color:'#555',marginTop:2}}>📍 {s.location}</div>
-                                </div>
-                                {sceneChars.length>0&&(
-                                  <div style={{display:'flex',gap:3,flexShrink:0}}>
-                                    {sceneChars.slice(0,2).map((name,ci)=>(
-                                      <span key={ci} style={{fontSize:9,padding:'2px 6px',background:'#1a0000',border:'1px solid #440000',borderRadius:20,color:'#cc4444'}}>
-                                        👤{name.split(' ')[0]}
-                                      </span>
-                                    ))}
-                                    {sceneChars.length>2&&<span style={{fontSize:9,color:'#444',alignSelf:'center'}}>+{sceneChars.length-2}</span>}
-                                  </div>
-                                )}
-                                <span style={{fontSize:16,color:'#440022',flexShrink:0,marginLeft:4}}>{isOpen?'▲':'▼'}</span>
-                              </div>
-
-                              {/* Expanded prompts */}
-                              {isOpen&&(
-                                <div style={{padding:'0 14px 14px',borderTop:'1px solid #220011'}}>
-                                  <div style={{fontSize:12,color:'#888',lineHeight:1.7,margin:'10px 0 8px'}}>{s.what}</div>
-                                  {sceneChars.length>0&&(
-                                    <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:10}}>
-                                      {sceneChars.map((name,ci)=>(
-                                        <span key={ci} style={{fontSize:10,padding:'3px 8px',background:'#1a0000',border:'1px solid #440000',borderRadius:20,color:'#cc4444'}}>👤 {name}</span>
-                                      ))}
+                                  {isOpen&&(
+                                    <div style={{padding:'0 14px 14px',borderTop:'1px solid #220011'}}>
+                                      <div style={{fontSize:12,color:'#888',lineHeight:1.7,margin:'10px 0 8px'}}>{s.what}</div>
+                                      {sceneChars.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:10}}>{sceneChars.map((name,ci)=><span key={ci} style={{fontSize:10,padding:'3px 8px',background:'#1a0000',border:'1px solid #440000',borderRadius:20,color:'#cc4444'}}>👤 {name}</span>)}</div>}
+                                      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                                        {sceneChars.length>0&&charPrompts.map((cp,ci)=>(
+                                          <button key={ci} onClick={()=>navigator.clipboard.writeText(cp).then(()=>toast(`✅ ${sceneChars[ci]} character prompt copy!`))}
+                                            style={{background:'#0a000a',border:'1px solid #440044',color:'#cc66cc',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
+                                            👤 Copy: {sceneChars[ci]} Character Prompt
+                                          </button>
+                                        ))}
+                                        {imagePrompt&&<button onClick={()=>navigator.clipboard.writeText(imagePrompt).then(()=>toast('✅ Image prompt copy!'))} style={{background:'#0a0000',border:'1px solid #440000',color:'#cc4444',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>🖼 Copy: Scene Image Prompt</button>}
+                                        <button onClick={()=>navigator.clipboard.writeText(videoPrompt).then(()=>toast('✅ Video prompt copy!'))} style={{background:'#000a0a',border:'1px solid #004444',color:'#44aaaa',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>🎬 Copy: Image → Video Prompt</button>
+                                      </div>
                                     </div>
                                   )}
-                                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                                    {sceneChars.length>0&&charPrompts.map((cp,ci)=>(
-                                      <button key={ci}
-                                        onClick={()=>navigator.clipboard.writeText(cp).then(()=>toast(`✅ ${sceneChars[ci]} character prompt copy!`))}
-                                        style={{background:'#0a000a',border:'1px solid #440044',color:'#cc66cc',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
-                                        👤 Copy: {sceneChars[ci]} Character Prompt
-                                      </button>
-                                    ))}
-                                    {imagePrompt&&(
-                                      <button
-                                        onClick={()=>navigator.clipboard.writeText(imagePrompt).then(()=>toast('✅ Image prompt copy!'))}
-                                        style={{background:'#0a0000',border:'1px solid #440000',color:'#cc4444',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
-                                        🖼 Copy: Scene Image Prompt
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={()=>navigator.clipboard.writeText(videoPrompt).then(()=>toast('✅ Video prompt copy!'))}
-                                      style={{background:'#000a0a',border:'1px solid #004444',color:'#44aaaa',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
-                                      🎬 Copy: Image → Video Prompt
-                                    </button>
-                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
                 </div>
               )}
-
             </div>
           )}
 
         </div>
       </div>
-
       <BottomNav userInitial={initial}/>
     </>
   );
