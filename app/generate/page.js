@@ -340,9 +340,7 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
       setShowEndBanner(true);
       saveState({storyChunks:final,storyEnded:true});
       await saveEpisode(final,true);
-      toast('✅ Episode save ho gaya!');
-      // Auto generate scenes + chars
-      setTimeout(()=>{ generateScenesAuto(final); generateCharsAuto(final); }, 1200);
+      toast('✅ Episode save ho gaya! My Stories mein jaake Scenes & Characters generate karo.');
     } catch(err){ toast('❌ '+err.message); }
 
     isGenRef.current=false; setIsGenerating(false); scrollBottom();
