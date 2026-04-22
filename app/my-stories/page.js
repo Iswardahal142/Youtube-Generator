@@ -129,6 +129,24 @@ function MyStoriesPage({ user }) {
     setSeasonEps(prev => prev.filter(e => e.id !== epId));
   }
 
+  // ── Delete entire story ────────────────────────────
+  const [deleteConfirmStory, setDeleteConfirmStory] = useState(null); // baseTitle
+  const [deleteInput,        setDeleteInput]        = useState('');
+
+  async function confirmDeleteStory(baseTitle) {
+    if (deleteInput.trim() !== 'DELETE') { toast('❌ "DELETE" likho confirm karne ke liye'); return; }
+    const epList = groups[baseTitle] || [];
+    const { db_deleteEpisode } = await import('../../lib/firebase');
+    for (const ep of epList) {
+      await db_deleteEpisode(user.uid, ep.id);
+    }
+    toast(`🗑 "${baseTitle}" aur saare episodes delete ho gaye`);
+    setDeleteConfirmStory(null);
+    setDeleteInput('');
+    await loadEpisodes();
+    setScreen('stories');
+  }
+
   // ── Open episode inline ────────────────────────────
   function openEpisode(ep) {
     const seasonEnded = seasonEps.every(e => e.ended);
@@ -394,11 +412,10 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                     return sum+(info?.video.viewCount||0);
                   },0);
                   return(
-                    <div key={baseTitle} onClick={()=>{setCurStory(baseTitle);setScreen('seasons');}}
-                      style={{background:'#0d000d',border:'1px solid #2a0022',borderRadius:12,padding:14,cursor:'pointer'}}
+                    <div key={baseTitle} style={{background:'#0d000d',border:'1px solid #2a0022',borderRadius:12,padding:14,cursor:'pointer',position:'relative'}}
                       onMouseEnter={e=>e.currentTarget.style.borderColor='#550033'}
                       onMouseLeave={e=>e.currentTarget.style.borderColor='#2a0022'}>
-                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10}} onClick={()=>{setCurStory(baseTitle);setScreen('seasons');}}>
                         <div style={{width:40,height:40,borderRadius:10,background:'linear-gradient(135deg,#3a0022,#1a000f)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0,border:'1px solid #440022'}}>📂</div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:14,fontWeight:700,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{baseTitle}</div>
@@ -410,10 +427,45 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                         </div>
                         <span style={{fontSize:18,color:'#330022',flexShrink:0}}>›</span>
                       </div>
+                      {/* Delete story button */}
+                      <button
+                        onClick={e=>{e.stopPropagation();setDeleteConfirmStory(baseTitle);setDeleteInput('');}}
+                        style={{position:'absolute',top:10,right:10,background:'rgba(80,0,0,0.25)',border:'1px solid #330000',color:'#663333',fontSize:13,padding:'5px 8px',borderRadius:7,cursor:'pointer',lineHeight:1}}>🗑</button>
                     </div>
                   );
                 })}
               </div>
+              {/* ── Delete Story Modal ── */}
+              {deleteConfirmStory && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                  <div style={{background:'#0d000d',border:'1px solid #550000',borderRadius:14,padding:20,width:'100%',maxWidth:340}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#cc2222',marginBottom:6,letterSpacing:1}}>🗑 STORY DELETE KARO</div>
+                    <div style={{fontSize:12,color:'#888',marginBottom:4,lineHeight:1.6}}>
+                      <span style={{color:'#ddd',fontWeight:600}}>"{deleteConfirmStory}"</span> aur iske saare episodes, scenes, aur characters permanently delete ho jayenge.
+                    </div>
+                    <div style={{fontSize:11,color:'#555',marginBottom:12}}>Confirm karne ke liye <span style={{color:'#cc4444',fontWeight:700}}>DELETE</span> likho:</div>
+                    <input
+                      value={deleteInput}
+                      onChange={e=>setDeleteInput(e.target.value)}
+                      placeholder="DELETE"
+                      style={{width:'100%',background:'#0a0000',border:`1px solid ${deleteInput==='DELETE'?'#cc0000':'#330000'}`,color:'#fff',padding:'10px 12px',borderRadius:8,fontSize:13,outline:'none',marginBottom:12,boxSizing:'border-box',fontFamily:'monospace',letterSpacing:2}}
+                    />
+                    <div style={{display:'flex',gap:8}}>
+                      <button
+                        onClick={()=>{setDeleteConfirmStory(null);setDeleteInput('');}}
+                        style={{flex:1,background:'transparent',border:'1px solid #333',color:'#666',padding:'10px',borderRadius:8,fontSize:12,cursor:'pointer'}}>
+                        Cancel
+                      </button>
+                      <button
+                        onClick={()=>confirmDeleteStory(deleteConfirmStory)}
+                        disabled={deleteInput!=='DELETE'}
+                        style={{flex:1,background:deleteInput==='DELETE'?'linear-gradient(135deg,#880000,#550000)':'#1a0000',border:`1px solid ${deleteInput==='DELETE'?'#cc0000':'#330000'}`,color:deleteInput==='DELETE'?'#fff':'#444',padding:'10px',borderRadius:8,fontSize:12,cursor:deleteInput==='DELETE'?'pointer':'not-allowed',fontWeight:700}}>
+                        🗑 Delete Karo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
