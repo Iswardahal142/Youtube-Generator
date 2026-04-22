@@ -841,7 +841,7 @@ function MyStoriesPage({ user }) {
 
                                 {/* Download Y2Mate */}
                                 <button
-                                  onClick={()=>window.open(`https://cobalt.tools/?u=${encodeURIComponent('https://youtube.com/watch?v='+vid.videoId)}`,'_blank')}
+                                  onClick={()=>vid.audioUrl && window.open(vid.audioUrl,'_blank')}
                                   style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
                                     border:'1px solid #004400',color:'#44bb66',borderRadius:8,
                                     fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
@@ -968,20 +968,18 @@ function MyStoriesPage({ user }) {
             {/* YouTube embed */}
             <div style={{padding:'12px 16px 8px'}}>
               <div style={{borderRadius:10,overflow:'hidden',background:'#000',border:'1px solid #220011'}}>
-                <iframe
-                  src={`https://www.youtube.com/embed/${previewModalVideo.videoId}?autoplay=1`}
-                  width="100%" height="200"
-                  frameBorder="0"
-                  allow="autoplay; encrypted-media"
-                  allowFullScreen
-                  style={{display:'block'}}
-                />
+                <audio
+  src={previewModalVideo.audioUrl}
+  controls
+  autoPlay
+  style={{width:'100%',marginTop:8,accentColor:'#cc4466'}}
+/>
               </div>
             </div>
             {/* Download button */}
             <div style={{padding:'8px 16px 16px'}}>
               <button
-                onClick={()=>window.open(`https://cobalt.tools/?u=${encodeURIComponent('https://youtube.com/watch?v='+previewModalVideo.videoId)}`,'_blank')}
+                onClick={()=>previewModalVideo.audioUrl && window.open(previewModalVideo.audioUrl,'_blank')}
                 style={{width:'100%',background:'linear-gradient(135deg,#003300,#001a00)',
                   border:'1px solid #006600',color:'#44ee66',
                   borderRadius:8,padding:'11px',fontSize:13,
