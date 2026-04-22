@@ -1,35 +1,48 @@
+// app/api/youtube-music/route.js
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const q = searchParams.get('q') || 'horror ambient dark';
+  const q = searchParams.get('q') || 'horror ambient background music no copyright';
 
   try {
-    const url = `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(q)}&token=${process.env.FREESOUND_KEY}&format=json&fields=id,name,previews,duration,username,tags&page_size=8&filter=duration:[5+TO+300]`;
-    const res = await fetch(url);
+    // Step 1: Search videos
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&videoCategoryId=10&maxResults=8&key=${process.env.YOUTUBE_API_KEY}`;
+    const searchRes = await fetch(searchUrl);
 
-    if (!res.ok) {
-      console.error('[music] Freesound error:', res.status);
-      return Response.json({ hits: [] }, { status: 200 });
+    if (!searchRes.ok) {
+      console.error('[youtube-music] Search error:', searchRes.status);
+      return Response.json({ videos: [] });
     }
 
-    const data = await res.json();
+    const searchData = await searchRes.json();
 
-    if (!data.results?.length) {
-      return Response.json({ hits: [] }, { status: 200 });
+    if (!searchData.items?.length) {
+      return Response.json({ videos: [] });
     }
 
-    const hits = data.results.map(item => ({
-      id: String(item.id),
-      title: item.name,
-      channel: item.username,
-      duration: Math.round(item.duration),
-      audio: item.previews?.['preview-hq-mp3'] || item.previews?.['preview-lq-mp3'] || '',
-      tags: (item.tags || []).slice(0, 3).join(', '),
+    // Step 2: Get view counts
+    const ids = searchData.items.map(i => i.id.videoId).join(',');
+    const statsRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${ids}&key=${process.env.YOUTUBE_API_KEY}`
+    );
+    const statsData = await statsRes.json();
+    const statsMap = {};
+    (statsData.items || []).forEach(v => {
+      statsMap[v.id] = parseInt(v.statistics?.viewCount || 0);
+    });
+
+    const videos = searchData.items.map(item => ({
+      videoId:      item.id.videoId,
+      title:        item.snippet.title,
+      channelTitle: item.snippet.channelTitle,
+      thumbnail:    item.snippet.thumbnails?.default?.url || '',
+      viewCount:    statsMap[item.id.videoId] || 0,
     }));
 
-    return Response.json({ hits });
+    return Response.json({ videos });
 
   } catch (e) {
-    console.error('[music] Error:', e.message);
-    return Response.json({ hits: [] }, { status: 200 });
+    console.error('[youtube-music] Error:', e.message);
+    return Response.json({ videos: [] });
   }
 }
