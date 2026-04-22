@@ -86,8 +86,8 @@ function MyStoriesPage({ user }) {
   const [ytMusicVideos,   setYtMusicVideos]   = useState([]);
   const [ytMusicLoading,  setYtMusicLoading]  = useState(false);
   const [ytMusicQuery,    setYtMusicQuery]     = useState('horror ambient background music no copyright');
-  const [expandedYtTrack, setExpandedYtTrack] = useState(null);
-  const [dlModalVideo,    setDlModalVideo]     = useState(null);
+  const [currentMusicIdx, setCurrentMusicIdx] = useState(0);
+  const [previewModalVideo, setPreviewModalVideo] = useState(null);
 
   // Delete story modal
   const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
@@ -185,7 +185,7 @@ function MyStoriesPage({ user }) {
     setChars(ep.savedChars || null);
     setShowAnalysis(false);
     setExpandedScene(null);
-    setYtMusicVideos([]); setExpandedYtTrack(null); setDlModalVideo(null);
+    setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
     stateRef.current = {
       title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
       currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
@@ -306,9 +306,8 @@ function MyStoriesPage({ user }) {
     setCharsLoading(false);
   }
 
-  // ── YouTube Music fetch ────────────────────────────
   async function fetchMusicAuto() {
-    setYtMusicLoading(true); setYtMusicVideos([]); setExpandedYtTrack(null);
+    setYtMusicLoading(true); setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
     try {
       const q = encodeURIComponent(ytMusicQuery || 'horror ambient background music no copyright');
       const res = await fetch(`/api/youtube-music?q=${q}`);
@@ -340,7 +339,7 @@ function MyStoriesPage({ user }) {
     await db_saveEpisode(user.uid,{...newEp,savedAt:Date.now()});
     setActiveEp(newEp);setPlayerChunks([]);setPlayerEnded(false);setShowEndBanner(false);
     setWordCount(0);setScenes(null);setChars(null);setNarration('');setShowNarration(false);
-    setExpandedScene(null);setYtMusicVideos([]);setExpandedYtTrack(null);setDlModalVideo(null);
+    setExpandedScene(null);setYtMusicVideos([]);setCurrentMusicIdx(0);setPreviewModalVideo(null);
     await loadEpisodes(); setScreen('player');
     toast('▶ '+nextNum+' shuru ho raha hai...');
   }
@@ -384,7 +383,7 @@ function MyStoriesPage({ user }) {
     setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null);
     setNarration(''); setShowNarration(false); setShowAnalysis(false);
-    setExpandedScene(null); setYtMusicVideos([]); setExpandedYtTrack(null); setDlModalVideo(null);
+    setExpandedScene(null); setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
 
     await loadEpisodes();
     setScreen('player');
@@ -780,7 +779,7 @@ function MyStoriesPage({ user }) {
                         <div className="analysis-hint" style={{marginBottom:8}}>
                           {ytMusicVideos.length===0&&!ytMusicLoading
                             ?<span style={{color:'#555'}}>Story end hone pe auto fetch hoga. Ya query likhke search karo. 👆</span>
-                            :<span style={{color:'#555'}}>Tap karo preview sunne ke liye — ⬇ se download karo.</span>
+                            :<span style={{color:'#555'}}>Preview sun lo — Y2Mate se download karo.</span>
                           }
                         </div>
 
@@ -790,76 +789,79 @@ function MyStoriesPage({ user }) {
                           </div>
                         )}
 
-                        {/* Video list */}
-                        {ytMusicVideos.length>0&&(
-                          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                            {ytMusicVideos.map((vid,ti)=>{
-                              const isOpen=expandedYtTrack===ti;
-                              const ytUrl=`https://www.youtube.com/watch?v=${vid.videoId}`;
-                              const embedUrl=`https://www.youtube.com/embed/${vid.videoId}?autoplay=1`;
-                              return(
-                                <div key={vid.videoId}
-                                  style={{background:isOpen?'rgba(136,0,34,0.12)':'#0a0005',
-                                    border:`1px solid ${isOpen?'#880022':'#220011'}`,
-                                    borderRadius:10,overflow:'hidden'}}>
-
-                                  {/* Row tap to expand */}
-                                  <div onClick={()=>setExpandedYtTrack(isOpen?null:ti)}
-                                    style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',cursor:'pointer'}}>
-                                    <div style={{width:36,height:36,borderRadius:8,flexShrink:0,
-                                      background:'#1a0010',border:'1px solid #330022',
-                                      display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>
-                                      {isOpen?'🎵':'🎼'}
-                                    </div>
-                                    <div style={{flex:1,minWidth:0}}>
-                                      <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',
-                                        overflow:'hidden',textOverflow:'ellipsis'}}>{vid.title}</div>
-                                      <div style={{fontSize:10,color:'#555',marginTop:2}}>
-                                        {vid.channelTitle}{vid.viewCount?` · ${fmtViews(vid.viewCount)} views`:''}
-                                      </div>
-                                    </div>
-                                    <span style={{color:'#440022',fontSize:14,flexShrink:0}}>{isOpen?'▲':'▼'}</span>
-                                  </div>
-
-                                  {/* Expanded: embed + buttons */}
-                                  {isOpen&&(
-                                    <div style={{padding:'0 12px 12px',borderTop:'1px solid #1a0010'}}>
-                                      {/* YouTube embed preview */}
-                                      <div style={{borderRadius:8,overflow:'hidden',marginBottom:10,
-                                        background:'#000',border:'1px solid #220011'}}>
-                                        <iframe
-                                          src={embedUrl}
-                                          width="100%" height="160"
-                                          frameBorder="0"
-                                          allow="autoplay; encrypted-media"
-                                          allowFullScreen
-                                          style={{display:'block'}}
-                                        />
-                                      </div>
-                                      {/* Action buttons */}
-                                      <div style={{display:'flex',gap:8}}>
-                                        <button
-                                          onClick={()=>navigator.clipboard.writeText(ytUrl).then(()=>toast('✅ YouTube link copy!'))}
-                                          style={{flex:1,background:'#0a000a',border:'1px solid #440044',
-                                            color:'#cc66cc',borderRadius:8,fontSize:12,padding:'9px 8px',
-                                            cursor:'pointer',fontWeight:600}}>
-                                          🔗 Copy Link
-                                        </button>
-                                        <button
-                                          onClick={()=>setDlModalVideo(vid)}
-                                          style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
-                                            border:'1px solid #004400',color:'#44bb66',borderRadius:8,
-                                            fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
-                                          ⬇ Download
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
+                        {/* Single video card with prev/next */}
+                        {ytMusicVideos.length>0&&(()=>{
+                          const vid = ytMusicVideos[currentMusicIdx];
+                          const total = ytMusicVideos.length;
+                          return (
+                            <div style={{background:'#0a0005',border:'1px solid #440022',borderRadius:12,overflow:'hidden'}}>
+                              {/* Track info row */}
+                              <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 12px 10px'}}>
+                                <div style={{width:36,height:36,borderRadius:8,flexShrink:0,
+                                  background:'#1a0010',border:'1px solid #330022',
+                                  display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>
+                                  🎵
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',
+                                    overflow:'hidden',textOverflow:'ellipsis'}}>{vid.title}</div>
+                                  <div style={{fontSize:10,color:'#555',marginTop:2}}>
+                                    {vid.channelTitle}{vid.viewCount?` · ${fmtViews(vid.viewCount)} views`:''}
+                                  </div>
+                                </div>
+                                {/* Counter */}
+                                <div style={{fontSize:10,color:'#550033',fontWeight:700,flexShrink:0,
+                                  background:'rgba(136,0,34,0.12)',border:'1px solid #330011',
+                                  borderRadius:6,padding:'3px 7px'}}>
+                                  {currentMusicIdx+1}/{total}
+                                </div>
+                              </div>
+
+                              {/* Action buttons */}
+                              <div style={{display:'flex',gap:8,padding:'0 12px 12px'}}>
+                                {/* Prev */}
+                                <button
+                                  onClick={()=>setCurrentMusicIdx(i=>Math.max(0,i-1))}
+                                  disabled={currentMusicIdx===0}
+                                  style={{background:'#0a000a',border:'1px solid #330033',
+                                    color:currentMusicIdx===0?'#333':'#cc66cc',borderRadius:8,
+                                    fontSize:16,padding:'9px 12px',cursor:currentMusicIdx===0?'not-allowed':'pointer',
+                                    flexShrink:0}}>
+                                  ◀
+                                </button>
+
+                                {/* Preview */}
+                                <button
+                                  onClick={()=>setPreviewModalVideo(vid)}
+                                  style={{flex:1,background:'linear-gradient(135deg,#550022,#330011)',
+                                    border:'1px solid #880033',color:'#ff6699',borderRadius:8,
+                                    fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
+                                  ▶ Preview
+                                </button>
+
+                                {/* Download Y2Mate */}
+                                <button
+                                  onClick={()=>window.open(`https://www.y2mate.com/youtube/${vid.videoId}`,'_blank')}
+                                  style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
+                                    border:'1px solid #004400',color:'#44bb66',borderRadius:8,
+                                    fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
+                                  ⬇ Download
+                                </button>
+
+                                {/* Next */}
+                                <button
+                                  onClick={()=>setCurrentMusicIdx(i=>Math.min(total-1,i+1))}
+                                  disabled={currentMusicIdx===total-1}
+                                  style={{background:'#0a000a',border:'1px solid #330033',
+                                    color:currentMusicIdx===total-1?'#333':'#cc66cc',borderRadius:8,
+                                    fontSize:16,padding:'9px 12px',cursor:currentMusicIdx===total-1?'not-allowed':'pointer',
+                                    flexShrink:0}}>
+                                  ▶
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </>
                     )}
                   </div>
@@ -942,8 +944,8 @@ function MyStoriesPage({ user }) {
         </div>
       </div>
 
-      {/* ── SaveFrom Download Modal ── */}
-      {dlModalVideo&&(
+      {/* ── Preview Modal ── */}
+      {previewModalVideo&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:300,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:16}}>
           <div style={{background:'#0d000d',border:'1px solid #550033',borderRadius:14,
@@ -951,41 +953,41 @@ function MyStoriesPage({ user }) {
             {/* Header */}
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
               padding:'14px 16px',borderBottom:'1px solid #220011'}}>
-              <div style={{fontSize:13,fontWeight:700,color:'#cc4466'}}>⬇ Download Music</div>
-              <button onClick={()=>setDlModalVideo(null)}
+              <div style={{fontSize:13,fontWeight:700,color:'#cc4466'}}>▶ Preview</div>
+              <button onClick={()=>setPreviewModalVideo(null)}
                 style={{background:'none',border:'none',color:'#555',fontSize:22,cursor:'pointer',lineHeight:1}}>✕</button>
             </div>
             {/* Track info */}
             <div style={{padding:'12px 16px',borderBottom:'1px solid #1a0010'}}>
               <div style={{fontSize:12,color:'#ddd',fontWeight:600,marginBottom:4,
                 whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                🎵 {dlModalVideo.title}
+                🎵 {previewModalVideo.title}
               </div>
-              <div style={{fontSize:10,color:'#555'}}>{dlModalVideo.channelTitle}</div>
+              <div style={{fontSize:10,color:'#555'}}>{previewModalVideo.channelTitle}</div>
             </div>
-            {/* SaveFrom iframe */}
-            <div style={{padding:16}}>
-              <div style={{fontSize:11,color:'#888',marginBottom:10,textAlign:'center'}}>
-                Neeche se quality choose karo aur download karo 👇
+            {/* YouTube embed */}
+            <div style={{padding:'12px 16px 8px'}}>
+              <div style={{borderRadius:10,overflow:'hidden',background:'#000',border:'1px solid #220011'}}>
+                <iframe
+                  src={`https://www.youtube.com/embed/${previewModalVideo.videoId}?autoplay=1`}
+                  width="100%" height="200"
+                  frameBorder="0"
+                  allow="autoplay; encrypted-media"
+                  allowFullScreen
+                  style={{display:'block'}}
+                />
               </div>
-              <iframe
-                src={`https://en1.savefrom.net/1-youtube-video-downloader-16ge/#url=${encodeURIComponent('https://www.youtube.com/watch?v='+dlModalVideo.videoId)}`}
-                width="100%" height="260"
-                frameBorder="0"
-                style={{borderRadius:10,border:'1px solid #330022',background:'#fff',display:'block'}}
-                title="Download"
-              />
-              {/* Fallback: browser mein kholo */}
-              <a
-                href={`https://en1.savefrom.net/1-youtube-video-downloader-16ge/#url=${encodeURIComponent('https://www.youtube.com/watch?v='+dlModalVideo.videoId)}`}
-                target="_blank" rel="noreferrer"
-                style={{display:'block',marginTop:10,textAlign:'center',
-                  background:'linear-gradient(135deg,#004400,#002200)',
+            </div>
+            {/* Download button */}
+            <div style={{padding:'8px 16px 16px'}}>
+              <button
+                onClick={()=>window.open(`https://www.y2mate.com/youtube/${previewModalVideo.videoId}`,'_blank')}
+                style={{width:'100%',background:'linear-gradient(135deg,#003300,#001a00)',
                   border:'1px solid #006600',color:'#44ee66',
-                  borderRadius:8,padding:'10px',fontSize:12,
-                  textDecoration:'none',fontWeight:700}}>
-                🌐 Browser mein Kholo (Recommended)
-              </a>
+                  borderRadius:8,padding:'11px',fontSize:13,
+                  cursor:'pointer',fontWeight:700}}>
+                ⬇ Y2Mate se Download Karo
+              </button>
             </div>
           </div>
         </div>
