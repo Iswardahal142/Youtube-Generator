@@ -841,7 +841,7 @@ function MyStoriesPage({ user }) {
 
                                 {/* Download Y2Mate */}
                                 <button
-                                  onClick={()=>window.open(`https://www.y2mate.com/youtube/${vid.videoId}`,'_blank')}
+                                  onClick={()=>window.open(`https://cobalt.tools/?u=${encodeURIComponent('https://youtube.com/watch?v='+vid.videoId)}`,'_blank')}
                                   style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
                                     border:'1px solid #004400',color:'#44bb66',borderRadius:8,
                                     fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
@@ -981,12 +981,12 @@ function MyStoriesPage({ user }) {
             {/* Download button */}
             <div style={{padding:'8px 16px 16px'}}>
               <button
-                onClick={()=>window.open(`https://www.y2mate.com/youtube/${previewModalVideo.videoId}`,'_blank')}
+                onClick={()=>window.open(`https://cobalt.tools/?u=${encodeURIComponent('https://youtube.com/watch?v='+previewModalVideo.videoId)}`,'_blank')}
                 style={{width:'100%',background:'linear-gradient(135deg,#003300,#001a00)',
                   border:'1px solid #006600',color:'#44ee66',
                   borderRadius:8,padding:'11px',fontSize:13,
                   cursor:'pointer',fontWeight:700}}>
-                ⬇ Y2Mate se Download Karo
+                 Download This
               </button>
             </div>
           </div>
