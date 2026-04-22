@@ -528,14 +528,21 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
               </div>
 
               {/* Resume banner */}
-              {storyChunks.length>0 && (
-                <div style={{background:'#0a0000',border:'1px solid #330000',borderRadius:10,padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div>
+              {storyChunks.length>0 && !storyEnded && (
+                <div style={{background:'#0a0000',border:'1px solid #330000',borderRadius:10,padding:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:11,color:'#880000',fontWeight:700}}>{season} · {epNum}</div>
-                    <div style={{fontSize:13,color:'#ddd',marginTop:3}}>{title||'Untitled'}</div>
+                    <div style={{fontSize:13,color:'#ddd',marginTop:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{title||'Untitled'}</div>
                     <div style={{fontSize:11,color:'#444',marginTop:2}}>{wordCount} words</div>
                   </div>
-                  <button onClick={()=>setScreen('story')} className="btn btn-ghost" style={{fontSize:12,padding:'8px 14px'}}>▶ Continue</button>
+                  <div style={{display:'flex',gap:6,flexShrink:0}}>
+                    <button onClick={()=>setScreen('story')} className="btn btn-ghost" style={{fontSize:12,padding:'8px 14px'}}>▶ Continue</button>
+                    <button onClick={()=>{
+                      setStoryChunks([]); setWordCount(0); setTitle(''); setStoryEnded(false);
+                      setShowEndBanner(false); setScenes(null); setChars(null);
+                      saveState({storyChunks:[],storyEnded:false,title:'',savedScenes:null,savedChars:null});
+                    }} style={{background:'transparent',border:'1px solid #330000',color:'#553333',fontSize:13,padding:'8px 10px',borderRadius:8,cursor:'pointer'}}>✕</button>
+                  </div>
                 </div>
               )}
             </div>
