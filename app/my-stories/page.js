@@ -276,7 +276,7 @@ function MyStoriesPage({ user }) {
     const curChars=stateRef.current.savedChars||chars||[];
     const charList=curChars.length?curChars.map(c=>`${c.name} (${c.role})`).join(', '):'';
     try{
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}\n\n${charList?`Story ke characters: ${charList}\n\n`:''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated character names jo is scene mein hain]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format.`}]})});
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}\n\n${charList?`IMPORTANT — Story ke SAARE characters (inhe miss mat karna):\n${charList}\n\nHar scene mein chars_in_scene field mein SIRF inhi characters ke naam use karo, exact spelling same rakho.\n\n`:''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated — sirf wahi characters jo is scene mein physically present hain, exact naam use karo]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format. Koi extra text nahi.`}]})});
       const data=await res.json();
       const parsed=parseScenes(data.choices?.[0]?.message?.content||'');
       if(parsed.length){setScenes(parsed);stateRef.current.savedScenes=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} scenes ready!`);}
@@ -423,7 +423,11 @@ function MyStoriesPage({ user }) {
 
   const storyList  = Object.entries(groups);
   const seasonMap  = screen!=='stories'?getSeasonsForStory(curStory):{};
-  const seasonList = Object.entries(seasonMap);
+  const seasonList = Object.entries(seasonMap).sort((a, b) => {
+    const na = parseInt((a[0].match(/\d+/)||[0])[0])||0;
+    const nb = parseInt((b[0].match(/\d+/)||[0])[0])||0;
+    return nb - na; // Season 3, 2, 1 — latest upar
+  });
   const breadcrumb = [
     {label:'My Stories',sc:'stories'},
     ...(screen!=='stories'?[{label:curStory.length>14?curStory.slice(0,12)+'…':curStory,sc:'seasons'}]:[]),
@@ -692,8 +696,6 @@ function MyStoriesPage({ user }) {
                         {chars?.map((c,i)=>(
                           <div key={i} className="char-card">
                             <div className="char-name"><span style={{fontSize:12,color:'#666',marginRight:4}}>#{i+1}</span>{c.name}<span className="char-role-badge">{c.role}</span></div>
-                            <div className="char-desc">{c.desc}</div>
-                            {c.appear&&<div className="char-appear">📍 {c.appear}</div>}
                           </div>
                         ))}
                       </>
