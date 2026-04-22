@@ -55,6 +55,7 @@ function YoutubePage({ user }) {
   // Titles
   const [titlesLoading, setTitlesLoading] = useState(false);
   const [titles,        setTitles]        = useState([]);
+  const [selectedTitle, setSelectedTitle] = useState(''); // locked until manually changed
 
   // Description
   const [descLoading,   setDescLoading]   = useState(false);
@@ -205,7 +206,11 @@ function YoutubePage({ user }) {
       <div className="page-content" style={{background:'var(--void)'}}>
         <div className="mini-topbar">
           <button className="hamburger-btn" onClick={()=>setDrawerOpen(true)}>☰</button>
-          <span className="mini-topbar-title" style={{color:'#ff4444'}}>▶ YouTube Export</span>
+          <span className="mini-topbar-title" style={{color:'#ff4444', fontSize: selectedTitle ? 9 : 13, lineHeight:1.3, maxWidth:220, textAlign:'center', overflow:'hidden', display:'block'}}>
+            {selectedTitle
+              ? `${(storyRef.current.title||'').split(' | ')[0] || storyRef.current.title} | ${selectedTitle} | ${storyRef.current.season} ${storyRef.current.epNum}`
+              : '▶ YouTube Export'}
+          </span>
           <div style={{width:36}}/>
         </div>
 
@@ -320,12 +325,21 @@ function YoutubePage({ user }) {
             </button>
             {titles.length>0 && (
               <div className="yt-output-card">
-                {titles.map((t,i)=>(
-                  <div key={i} className="yt-title-option">
-                    <div className="yt-title-text">{t}</div>
-                    <button className="yt-copy-btn" onClick={()=>copyText(t,'Title')}>📋 Copy</button>
-                  </div>
-                ))}
+                <div style={{fontSize:10,color:'#446644',marginBottom:6,letterSpacing:1}}>TAP TO SELECT · AGAIN TAP = DESELECT</div>
+                {titles.map((t,i)=>{
+                  const isSelected = selectedTitle === t;
+                  return (
+                    <div key={i} className="yt-title-option"
+                      onClick={()=>setSelectedTitle(isSelected ? '' : t)}
+                      style={{cursor:'pointer', background: isSelected ? 'rgba(0,180,80,0.12)' : 'transparent', border: isSelected ? '1px solid rgba(0,180,80,0.35)' : '1px solid transparent', borderRadius:8, padding:'2px 4px', transition:'all 0.2s'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{fontSize:14,flexShrink:0}}>{isSelected ? '✅' : '⬜'}</span>
+                        <div className="yt-title-text" style={{color: isSelected ? '#66dd99' : undefined}}>{t}</div>
+                      </div>
+                      <button className="yt-copy-btn" onClick={e=>{e.stopPropagation();copyText(t,'Title')}}>📋 Copy</button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CollapseCard>
