@@ -82,10 +82,12 @@ function MyStoriesPage({ user }) {
   // Scene accordion
   const [expandedScene, setExpandedScene] = useState(null);
 
-  // Background music
-  const [bgMusic,        setBgMusic]        = useState([]);
-  const [bgMusicLoading, setBgMusicLoading] = useState(false);
-  const [selectedMusic,  setSelectedMusic]  = useState(null);
+  // ── YouTube Music states (replaces bgMusic) ──────
+  const [ytMusicVideos,   setYtMusicVideos]   = useState([]);
+  const [ytMusicLoading,  setYtMusicLoading]  = useState(false);
+  const [ytMusicQuery,    setYtMusicQuery]     = useState('horror ambient background music no copyright');
+  const [expandedYtTrack, setExpandedYtTrack] = useState(null);
+  const [dlModalVideo,    setDlModalVideo]     = useState(null);
 
   // Delete story modal
   const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
@@ -183,7 +185,7 @@ function MyStoriesPage({ user }) {
     setChars(ep.savedChars || null);
     setShowAnalysis(false);
     setExpandedScene(null);
-    setBgMusic([]); setSelectedMusic(null);
+    setYtMusicVideos([]); setExpandedYtTrack(null); setDlModalVideo(null);
     stateRef.current = {
       title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
       currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
@@ -304,19 +306,20 @@ function MyStoriesPage({ user }) {
     setCharsLoading(false);
   }
 
-  // ── Music: auto-fetch via /api/music route ─────────
+  // ── YouTube Music fetch ────────────────────────────
   async function fetchMusicAuto() {
-    setBgMusicLoading(true); setBgMusic([]); setSelectedMusic(null);
+    setYtMusicLoading(true); setYtMusicVideos([]); setExpandedYtTrack(null);
     try {
-      const res  = await fetch('/api/music?q=horror+dark+suspense+ambient');
+      const q = encodeURIComponent(ytMusicQuery || 'horror ambient background music no copyright');
+      const res = await fetch(`/api/youtube-music?q=${q}`);
       const data = await res.json();
-      if (data.hits?.length) {
-        setBgMusic(data.hits);
+      if (data.videos?.length) {
+        setYtMusicVideos(data.videos);
       } else {
-        toast('⚠️ Music nahi mila — dobara try karo');
+        toast('⚠️ Music videos nahi mile — query change karo');
       }
     } catch(e) { toast('❌ Music: ' + e.message); }
-    setBgMusicLoading(false);
+    setYtMusicLoading(false);
   }
 
   // ── Next Episode ───────────────────────────────────
@@ -337,7 +340,7 @@ function MyStoriesPage({ user }) {
     await db_saveEpisode(user.uid,{...newEp,savedAt:Date.now()});
     setActiveEp(newEp);setPlayerChunks([]);setPlayerEnded(false);setShowEndBanner(false);
     setWordCount(0);setScenes(null);setChars(null);setNarration('');setShowNarration(false);
-    setExpandedScene(null);setBgMusic([]);setSelectedMusic(null);
+    setExpandedScene(null);setYtMusicVideos([]);setExpandedYtTrack(null);setDlModalVideo(null);
     await loadEpisodes(); setScreen('player');
     toast('▶ '+nextNum+' shuru ho raha hai...');
   }
@@ -351,7 +354,6 @@ function MyStoriesPage({ user }) {
     await loadEpisodes();
   }
 
-  // ── FIX: startNextSeason ───────────────────────────
   async function startNextSeason() {
     const sMatch     = (activeEp?.season||'SEASON 1').match(/(\d+)/);
     const nextSznNum = (sMatch ? parseInt(sMatch[1]) : 1) + 1;
@@ -382,7 +384,7 @@ function MyStoriesPage({ user }) {
     setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null);
     setNarration(''); setShowNarration(false); setShowAnalysis(false);
-    setExpandedScene(null); setBgMusic([]); setSelectedMusic(null);
+    setExpandedScene(null); setYtMusicVideos([]); setExpandedYtTrack(null); setDlModalVideo(null);
 
     await loadEpisodes();
     setScreen('player');
@@ -403,19 +405,21 @@ function MyStoriesPage({ user }) {
     setNarrationLoading(false);
   }
 
-  async function generateSubtitle(ep,chunks) {
-    try{
-      const storySnippet=(chunks||[]).map(c=>c.text).join(' ').slice(0,400);
-      const baseTitle=(ep.title||'').split(' | ')[0].trim();
-      const season=ep.season||'SEASON 1',epNum=ep.epNum||'EP 01';
-      const seasonFmt=season.replace('SEASON ','').padStart(2,'0');
-      const epFmt=epNum.replace('EP ','').padStart(2,'0');
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:80,temperature:0.9,messages:[{role:'user',content:`Story title: "${baseTitle}"\nStory snippet: "${storySnippet}"\n\nEk viral Hindi YouTube horror subtitle banao.\nFormat: "क्या [kuch]?" ya "[kuch dramatic]!" — 6-10 Hindi words only.\nSirf subtitle text do.`}]})});
-      const data=await res.json();
-      const subtitle=data.choices?.[0]?.message?.content?.trim()||'';
+  // ── FIXED: subtitle sirf "Main Title | Hook" — no SEASON/EP ──
+  async function generateSubtitle(ep, chunks) {
+    try {
+      const storySnippet = (chunks||[]).map(c=>c.text).join(' ').slice(0,400);
+      const baseTitle = (ep.title||'').split(' | ')[0].trim();
+      const res = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        model:'openai/gpt-4o-mini', max_tokens:60, temperature:0.9,
+        messages:[{role:'user',content:`Story title: "${baseTitle}"\nStory snippet: "${storySnippet}"\n\nEk viral Hindi YouTube horror hook banao.\nFormat: "क्या [kuch]?" ya "[kuch dramatic]!" — sirf 6-10 Hindi words.\nKoi quotes ya extra text mat lagao. Sirf hook text do.`}]
+      })});
+      const data = await res.json();
+      const subtitle = data.choices?.[0]?.message?.content?.trim()?.replace(/["""'']/g,'') || '';
       if(!subtitle) return null;
-      return `${baseTitle} | ${subtitle} | SEASON ${seasonFmt} EP ${epFmt}`;
-    }catch{return null;}
+      // ✅ Sirf: "Main Title | Hook" — clean, ek hi line
+      return `${baseTitle} | ${subtitle}`;
+    } catch { return null; }
   }
 
   function scrollBottom(){setTimeout(()=>{if(storyAreaRef.current)storyAreaRef.current.scrollTop=storyAreaRef.current.scrollHeight;},50);}
@@ -433,6 +437,20 @@ function MyStoriesPage({ user }) {
   const TARGET=1500;
   const wcPct=Math.min(100,(wordCount/TARGET)*100);
   const seasonEnded=activeEp?.seasonEnded||seasonEps.every(e=>e.ended&&e.seasonEnded)||false;
+
+  // ── Next Season exist check ────────────────────────
+  const nextSeasonExists = (() => {
+    if (!activeEp) return false;
+    const baseTitle = (activeEp.title||'').split(' | ')[0].trim();
+    const curSznNum = parseInt((activeEp.season||'SEASON 1').match(/(\d+)/)?.[1]||'1');
+    const nextSznKey = `SEASON ${curSznNum + 1}`;
+    return !!(groups[baseTitle] && Object.keys(getSeasonsForStory(baseTitle)).includes(nextSznKey));
+  })();
+  const nextSeasonLabel = (() => {
+    if (!activeEp) return 'Next Season';
+    const curSznNum = parseInt((activeEp.season||'SEASON 1').match(/(\d+)/)?.[1]||'1');
+    return `SEASON ${curSznNum + 1}`;
+  })();
 
   return (
     <>
@@ -573,7 +591,18 @@ function MyStoriesPage({ user }) {
                         <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5,textTransform:'uppercase'}}>{ep.epNum||'EP 01'}</span>
                         <span style={{fontSize:9,color:ep.ended?'#44bb66':'#cc8822',background:ep.ended?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${ep.ended?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>{ep.ended?(seasonDone?'🔒 Locked':'Done'):'Ongoing'}</span>
                       </div>
-                      {(()=>{const parts=(ep.title||'').split(' | ');const mainT=parts[0]||'Untitled';const subT=parts[1]&&parts[1]!=='...'?parts[1]:null;return(<><div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>{subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>{subT}</div>}</>);})()}
+                      {(()=>{
+                        const parts=(ep.title||'').split(' | ');
+                        const mainT=parts[0]||'Untitled';
+                        // ✅ sirf parts[1] — subtitle hook. parts[2] (SEASON/EP) ignore.
+                        const subT=parts[1]&&parts[1]!=='...'?parts[1]:null;
+                        return(
+                          <>
+                            <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>
+                            {subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>"{subT}"</div>}
+                          </>
+                        );
+                      })()}
                       <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
                         <span style={{fontSize:10,color:'#444'}}>{ep.wordCount||0} words</span>
                         {savedDate&&<span style={{fontSize:10,color:'#333'}}>· {savedDate}</span>}
@@ -618,9 +647,26 @@ function MyStoriesPage({ user }) {
                         <div className="end-banner-sub">{activeEp.season} · {activeEp.epNum} complete!</div>
                         {seasonEnded&&<div style={{fontSize:11,color:'#cc6600',background:'rgba(80,30,0,0.15)',border:'1px solid #441100',borderRadius:8,padding:'8px 12px',marginBottom:10}}>🔒 Season complete — editing band hai</div>}
                         <div className="btn-row" style={{flexWrap:'wrap',gap:8}}>
+                          {/* Next Episode — only if season not ended */}
                           {!seasonEnded&&<button className="btn btn-primary" onClick={startNextEpisode}>▶ Next Episode</button>}
+                          {/* Season End — only if season not ended */}
                           {!seasonEnded&&<button className="btn btn-ghost" onClick={endSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🔒 Season End Karo</button>}
-                          {seasonEnded&&<button className="btn btn-ghost" onClick={startNextSeason} style={{borderColor:'#44bb66',color:'#44bb66'}}>🏁 Next Season Shuru Karo</button>}
+                          {/* ── FIXED: Next Season button ── */}
+                          {seasonEnded&&(
+                            nextSeasonExists
+                              /* Season already exist hai — direct wahan le jao */
+                              ? <button className="btn btn-primary" onClick={()=>{
+                                  const baseTitle=(activeEp.title||'').split(' | ')[0].trim();
+                                  setCurStory(baseTitle);
+                                  setScreen('seasons');
+                                }} style={{background:'linear-gradient(135deg,#004400,#002200)',borderColor:'#44bb66',color:'#44bb66'}}>
+                                  🎬 {nextSeasonLabel} Dekho
+                                </button>
+                              /* Season exist nahi — create karo */
+                              : <button className="btn btn-ghost" onClick={startNextSeason} style={{borderColor:'#44bb66',color:'#44bb66'}}>
+                                  🏁 Next Season Shuru Karo
+                                </button>
+                          )}
                           <button className="btn btn-primary" onClick={()=>generateFullNarration(false)} style={{background:'linear-gradient(135deg,#005500,#003300)'}}>🎙 ElevenLabs Narration</button>
                           <button className="btn btn-ghost" onClick={()=>setShowAnalysis(true)}>🎬 Scenes & Characters</button>
                         </div>
@@ -700,52 +746,118 @@ function MyStoriesPage({ user }) {
                     )}
                   </div>
 
-                  {/* Background Music */}
+                  {/* ── Background Music — YouTube based ── */}
                   <div className="analysis-panel" style={{marginTop:12}}>
                     <PanelHeader
                       icon="🎵" title="BACKGROUND MUSIC"
                       open={showMusicPanel} onToggle={()=>setShowMusicPanel(o=>!o)}
                       rightEl={showMusicPanel&&(
-                        <button onClick={fetchMusicAuto} disabled={bgMusicLoading}
+                        <button onClick={fetchMusicAuto} disabled={ytMusicLoading}
                           style={{background:'transparent',border:'1px solid #440022',color:'#cc4466',fontSize:10,padding:'3px 8px',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
-                          {bgMusicLoading?<div className="spinner" style={{width:10,height:10}}/>:'🔄'} Dobara
+                          {ytMusicLoading?<div className="spinner" style={{width:10,height:10}}/>:'🔄'} Dobara
                         </button>
                       )}
                     />
                     {showMusicPanel&&(
                       <>
-                        <div className="analysis-hint" style={{marginBottom:10}}>
-                          {bgMusic.length===0&&!bgMusicLoading
-                            ?<span style={{color:'#555'}}>Story end hone pe auto fetch hoga. Ya "Dobara" tap karo. 👆</span>
-                            :<span style={{color:'#555'}}>Tap karo preview ke liye — download karo aur use karo.</span>
+                        {/* Search bar */}
+                        <div style={{display:'flex',gap:6,marginBottom:10}}>
+                          <input
+                            value={ytMusicQuery}
+                            onChange={e=>setYtMusicQuery(e.target.value)}
+                            onKeyDown={e=>e.key==='Enter'&&fetchMusicAuto()}
+                            placeholder="horror ambient, dark suspense..."
+                            style={{flex:1,background:'#0a0005',border:'1px solid #330022',color:'#ddd',
+                              padding:'7px 10px',borderRadius:8,fontSize:12,outline:'none'}}
+                          />
+                          <button onClick={fetchMusicAuto} disabled={ytMusicLoading}
+                            style={{background:'linear-gradient(135deg,#550022,#330011)',border:'1px solid #880033',
+                              color:'#ff6699',borderRadius:8,padding:'7px 12px',fontSize:12,cursor:'pointer',flexShrink:0}}>
+                            🔍
+                          </button>
+                        </div>
+
+                        <div className="analysis-hint" style={{marginBottom:8}}>
+                          {ytMusicVideos.length===0&&!ytMusicLoading
+                            ?<span style={{color:'#555'}}>Story end hone pe auto fetch hoga. Ya query likhke search karo. 👆</span>
+                            :<span style={{color:'#555'}}>Tap karo preview sunne ke liye — ⬇ se download karo.</span>
                           }
                         </div>
-                        {bgMusicLoading&&<div style={{display:'flex',alignItems:'center',gap:8,color:'#cc4466',fontSize:12,padding:'8px 0'}}><div className="spinner"/>Music dhoondh raha hai...</div>}
-                        {bgMusic.length>0&&(
+
+                        {ytMusicLoading&&(
+                          <div style={{display:'flex',alignItems:'center',gap:8,color:'#cc4466',fontSize:12,padding:'8px 0'}}>
+                            <div className="spinner"/>YouTube pe dhoondh raha hai...
+                          </div>
+                        )}
+
+                        {/* Video list */}
+                        {ytMusicVideos.length>0&&(
                           <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                            {bgMusic.map((track,ti)=>(
-                              <div key={ti}
-                                style={{background:selectedMusic?.id===track.id?'rgba(136,0,34,0.15)':'#0a0005',border:`1px solid ${selectedMusic?.id===track.id?'#880022':'#220011'}`,borderRadius:10,padding:'10px 12px',cursor:'pointer'}}
-                                onClick={()=>setSelectedMusic(prev=>prev?.id===track.id?null:track)}>
-                                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                  <span style={{fontSize:16,flexShrink:0}}>{selectedMusic?.id===track.id?'🎵':'🎼'}</span>
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{track.tags?.split(',').slice(0,3).join(', ')||'Track '+(ti+1)}</div>
-                                    <div style={{fontSize:10,color:'#555',marginTop:2}}>{track.duration}s · Free · No Copyright</div>
+                            {ytMusicVideos.map((vid,ti)=>{
+                              const isOpen=expandedYtTrack===ti;
+                              const ytUrl=`https://www.youtube.com/watch?v=${vid.videoId}`;
+                              const embedUrl=`https://www.youtube.com/embed/${vid.videoId}?autoplay=1`;
+                              return(
+                                <div key={vid.videoId}
+                                  style={{background:isOpen?'rgba(136,0,34,0.12)':'#0a0005',
+                                    border:`1px solid ${isOpen?'#880022':'#220011'}`,
+                                    borderRadius:10,overflow:'hidden'}}>
+
+                                  {/* Row tap to expand */}
+                                  <div onClick={()=>setExpandedYtTrack(isOpen?null:ti)}
+                                    style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',cursor:'pointer'}}>
+                                    <div style={{width:36,height:36,borderRadius:8,flexShrink:0,
+                                      background:'#1a0010',border:'1px solid #330022',
+                                      display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>
+                                      {isOpen?'🎵':'🎼'}
+                                    </div>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',
+                                        overflow:'hidden',textOverflow:'ellipsis'}}>{vid.title}</div>
+                                      <div style={{fontSize:10,color:'#555',marginTop:2}}>
+                                        {vid.channelTitle}{vid.viewCount?` · ${fmtViews(vid.viewCount)} views`:''}
+                                      </div>
+                                    </div>
+                                    <span style={{color:'#440022',fontSize:14,flexShrink:0}}>{isOpen?'▲':'▼'}</span>
                                   </div>
-                                  <a href={track.audio} download target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}
-                                    style={{background:'linear-gradient(135deg,#003300,#001a00)',border:'1px solid #004400',color:'#44bb66',borderRadius:6,padding:'6px 10px',fontSize:11,textDecoration:'none',fontWeight:700,flexShrink:0}}>⬇ DL</a>
+
+                                  {/* Expanded: embed + buttons */}
+                                  {isOpen&&(
+                                    <div style={{padding:'0 12px 12px',borderTop:'1px solid #1a0010'}}>
+                                      {/* YouTube embed preview */}
+                                      <div style={{borderRadius:8,overflow:'hidden',marginBottom:10,
+                                        background:'#000',border:'1px solid #220011'}}>
+                                        <iframe
+                                          src={embedUrl}
+                                          width="100%" height="160"
+                                          frameBorder="0"
+                                          allow="autoplay; encrypted-media"
+                                          allowFullScreen
+                                          style={{display:'block'}}
+                                        />
+                                      </div>
+                                      {/* Action buttons */}
+                                      <div style={{display:'flex',gap:8}}>
+                                        <button
+                                          onClick={()=>navigator.clipboard.writeText(ytUrl).then(()=>toast('✅ YouTube link copy!'))}
+                                          style={{flex:1,background:'#0a000a',border:'1px solid #440044',
+                                            color:'#cc66cc',borderRadius:8,fontSize:12,padding:'9px 8px',
+                                            cursor:'pointer',fontWeight:600}}>
+                                          🔗 Copy Link
+                                        </button>
+                                        <button
+                                          onClick={()=>setDlModalVideo(vid)}
+                                          style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
+                                            border:'1px solid #004400',color:'#44bb66',borderRadius:8,
+                                            fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
+                                          ⬇ Download
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                                {selectedMusic?.id===track.id&&(
-                                  <div style={{marginTop:8}}>
-                                    <audio controls src={track.audio} style={{width:'100%',height:32,marginBottom:6}}/>
-                                    <a href={track.audio} download target="_blank" rel="noreferrer"
-                                      style={{display:'block',background:'linear-gradient(135deg,#004400,#002200)',border:'1px solid #006600',color:'#44ee66',borderRadius:8,padding:'8px',fontSize:12,textAlign:'center',textDecoration:'none',fontWeight:700}}>⬇ Full Download Karo</a>
-                                    <div style={{fontSize:10,color:'#444',marginTop:4,textAlign:'center'}}>Pixabay Music — Free commercial use · No attribution required</div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </>
@@ -829,6 +941,56 @@ function MyStoriesPage({ user }) {
 
         </div>
       </div>
+
+      {/* ── SaveFrom Download Modal ── */}
+      {dlModalVideo&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:300,
+          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:16}}>
+          <div style={{background:'#0d000d',border:'1px solid #550033',borderRadius:14,
+            width:'100%',maxWidth:420,overflow:'hidden'}}>
+            {/* Header */}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+              padding:'14px 16px',borderBottom:'1px solid #220011'}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#cc4466'}}>⬇ Download Music</div>
+              <button onClick={()=>setDlModalVideo(null)}
+                style={{background:'none',border:'none',color:'#555',fontSize:22,cursor:'pointer',lineHeight:1}}>✕</button>
+            </div>
+            {/* Track info */}
+            <div style={{padding:'12px 16px',borderBottom:'1px solid #1a0010'}}>
+              <div style={{fontSize:12,color:'#ddd',fontWeight:600,marginBottom:4,
+                whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                🎵 {dlModalVideo.title}
+              </div>
+              <div style={{fontSize:10,color:'#555'}}>{dlModalVideo.channelTitle}</div>
+            </div>
+            {/* SaveFrom iframe */}
+            <div style={{padding:16}}>
+              <div style={{fontSize:11,color:'#888',marginBottom:10,textAlign:'center'}}>
+                Neeche se quality choose karo aur download karo 👇
+              </div>
+              <iframe
+                src={`https://en1.savefrom.net/1-youtube-video-downloader-16ge/#url=${encodeURIComponent('https://www.youtube.com/watch?v='+dlModalVideo.videoId)}`}
+                width="100%" height="260"
+                frameBorder="0"
+                style={{borderRadius:10,border:'1px solid #330022',background:'#fff',display:'block'}}
+                title="Download"
+              />
+              {/* Fallback: browser mein kholo */}
+              <a
+                href={`https://en1.savefrom.net/1-youtube-video-downloader-16ge/#url=${encodeURIComponent('https://www.youtube.com/watch?v='+dlModalVideo.videoId)}`}
+                target="_blank" rel="noreferrer"
+                style={{display:'block',marginTop:10,textAlign:'center',
+                  background:'linear-gradient(135deg,#004400,#002200)',
+                  border:'1px solid #006600',color:'#44ee66',
+                  borderRadius:8,padding:'10px',fontSize:12,
+                  textDecoration:'none',fontWeight:700}}>
+                🌐 Browser mein Kholo (Recommended)
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       <BottomNav userInitial={initial}/>
     </>
   );
