@@ -341,6 +341,27 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
       saveState({storyChunks:final,storyEnded:true});
       await saveEpisode(final,true);
       toast('✅ Episode save ho gaya! My Stories mein jaake Scenes & Characters generate karo.');
+      // Generate subtitle and update title
+      setTimeout(async ()=>{
+        try {
+          const baseT = (generatedRef.current.title||title||'').split(' | ')[0].trim();
+          const snippet = final.map(c=>c.text).join(' ').slice(0,400);
+          const sznFmt = (stateRef.current.season||'SEASON 1').replace('SEASON ','').padStart(2,'0');
+          const epFmt  = (stateRef.current.epNum||'EP 01').replace('EP ','').padStart(2,'0');
+          const res2 = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:80, temperature:0.9,
+              messages:[{ role:'user', content:`Story title: "${baseT}"\nStory snippet: "${snippet}"\n\nEk viral Hindi YouTube horror subtitle banao jo curiosity aur fear create kare.\nFormat: "क्या [kuch interesting]?" ya "[kuch dramatic]!" — 6-10 Hindi words only.\nSirf subtitle text do, koi extra text nahi.` }],
+            }),
+          });
+          const d2  = await res2.json();
+          const sub = d2.choices?.[0]?.message?.content?.trim()||'';
+          if (sub) {
+            const fullTitle = `${baseT} | ${sub} | SEASON ${sznFmt} EP ${epFmt}`;
+            setTitle(fullTitle);
+            saveState({ title: fullTitle });
+          }
+        } catch {}
+      }, 500);
     } catch(err){ toast('❌ '+err.message); }
 
     isGenRef.current=false; setIsGenerating(false); scrollBottom();
