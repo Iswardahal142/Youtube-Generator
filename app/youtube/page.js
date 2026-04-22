@@ -1,3 +1,4 @@
+// app/youtube/page.js
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -39,7 +40,7 @@ function YoutubePage({ user }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // YouTube data
-  const [ytData,      setYtData]      = useState(null);   // { channelName, videos, lastVideo, ... }
+  const [ytData,      setYtData]      = useState(null);
   const [ytLoading,   setYtLoading]   = useState(true);
   const [ytError,     setYtError]     = useState('');
 
@@ -47,15 +48,17 @@ function YoutubePage({ user }) {
   const [lastEp,      setLastEp]      = useState(null);
 
   // Comparison
-  const [comparison,  setComparison]  = useState(null);  // { titleMatch, descMatch, score }
+  const [comparison,  setComparison]  = useState(null);
 
   // Checklist — auto-updated from comparison
   const [checks, setChecks] = useState({ title: false, desc: false, uploaded: false });
 
-  // Titles
-  const [titlesLoading, setTitlesLoading] = useState(false);
-  const [titles,        setTitles]        = useState([]);
-  const [selectedTitle, setSelectedTitle] = useState(''); // locked until manually changed
+  // Titles — now single title at a time
+  const [titlesLoading,   setTitlesLoading]   = useState(false);
+  const [generatedTitles, setGeneratedTitles] = useState([]); // all 7 stored internally
+  const [currentTitleIdx, setCurrentTitleIdx] = useState(0);  // which one is showing
+  const [selectedTitle,   setSelectedTitle]   = useState(''); // locked selected title
+  const [isSavingTitle,   setIsSavingTitle]   = useState(false);
 
   // Description
   const [descLoading,   setDescLoading]   = useState(false);
@@ -76,7 +79,6 @@ function YoutubePage({ user }) {
   useEffect(() => {
     if (!user?.uid) return;
 
-    // Load story state
     import('../../lib/firebase').then(async ({ db_loadState, db_getEpisodes }) => {
       const d = await db_loadState(user.uid);
       if (d) {
@@ -89,7 +91,6 @@ function YoutubePage({ user }) {
           ytDesc:  d.ytDesc  || '',
         };
       }
-      // Last saved episode
       const eps = await db_getEpisodes(user.uid);
       if (eps?.length) {
         const sorted = [...eps].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
@@ -97,7 +98,6 @@ function YoutubePage({ user }) {
       }
     });
 
-    // Fetch YouTube data
     fetchYT();
   }, [user?.uid]);
 
@@ -130,11 +130,13 @@ function YoutubePage({ user }) {
     setChecks({ title: titleMatch, desc: descMatch, uploaded });
   }
 
-  // ── Titles ────────────────────────────────────────
+  // ── Titles — single generate flow ─────────────────
   async function generateYtTitles() {
     const { chunks, title, epNum } = storyRef.current;
     if (!chunks.length) { toast('⚠️ Pehle story complete karo!'); return; }
-    setTitlesLoading(true); setTitles([]);
+    setTitlesLoading(true);
+    setGeneratedTitles([]);
+    setCurrentTitleIdx(0);
     const storyText = chunks.map(c=>c.text).join('\n\n').slice(0,1200);
     try {
       const res  = await fetch('/api/ai',{
@@ -146,9 +148,52 @@ function YoutubePage({ user }) {
       const data   = await res.json();
       const raw    = data.choices?.[0]?.message?.content?.trim()||'[]';
       const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
-      if (Array.isArray(parsed)) setTitles(parsed);
+      if (Array.isArray(parsed) && parsed.length) {
+        setGeneratedTitles(parsed);
+        setCurrentTitleIdx(0);
+      }
     } catch(e) { toast('❌ '+e.message); }
     setTitlesLoading(false);
+  }
+
+  // Show next title
+  function nextTitle() {
+    setCurrentTitleIdx(i => (i + 1) % generatedTitles.length);
+  }
+
+  // Select title + save to Firebase
+  async function selectAndSaveTitle() {
+    const titleToSave = generatedTitles[currentTitleIdx];
+    if (!titleToSave) return;
+    setIsSavingTitle(true);
+    try {
+      const { db_saveEpisode, db_getEpisodes } = await import('../../lib/firebase');
+      const eps = await db_getEpisodes(user.uid);
+      if (eps?.length) {
+        const sorted = [...eps].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+        const latestEp = sorted[0];
+        // Build new title: base | selectedTitle | SEASON EP
+        const basePart = (latestEp.title||'').split(' | ')[0].trim() || latestEp.title || '';
+        const seasonPart = latestEp.season || storyRef.current.season || 'SEASON 1';
+        const epPart = latestEp.epNum || storyRef.current.epNum || 'EP 01';
+        const newFullTitle = `${basePart} | ${titleToSave} | ${seasonPart} ${epPart}`;
+
+        await db_saveEpisode(user.uid, {
+          ...latestEp,
+          title: newFullTitle,
+          ytTitle: titleToSave,
+          savedAt: Date.now(),
+        });
+
+        // Update local lastEp so comparison card also updates
+        setLastEp(prev => prev ? { ...prev, title: newFullTitle, ytTitle: titleToSave } : prev);
+        setSelectedTitle(titleToSave);
+        toast('✅ Title select aur save ho gaya!');
+      }
+    } catch(e) {
+      toast('❌ Save nahi hua: ' + e.message);
+    }
+    setIsSavingTitle(false);
   }
 
   // ── Description ───────────────────────────────────
@@ -196,6 +241,10 @@ function YoutubePage({ user }) {
     : comparison.score>=60 ? '#00cc55'
     : comparison.score>=30 ? '#ffaa00' : '#cc3333';
 
+  // Current showing title
+  const currentTitle = generatedTitles[currentTitleIdx] || '';
+  const isCurrentSelected = selectedTitle === currentTitle;
+
   // ─────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────
@@ -240,14 +289,17 @@ function YoutubePage({ user }) {
                   </div>
                 </div>
 
-                {/* Last Story row */}
+                {/* Last Story row — ytTitle ya selected title dikhta hai */}
                 {lastEp && (
                   <div style={{display:'flex',alignItems:'center',gap:10,padding:10,borderRadius:10,background:'rgba(80,0,80,0.12)',border:'1px solid #2a0028',marginBottom:8}}>
                     <div style={{width:36,height:36,borderRadius:8,background:'rgba(120,0,120,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>📚</div>
                     <div style={{flex:1,overflow:'hidden'}}>
                       <div style={{fontSize:9,color:'#666',letterSpacing:1.5,textTransform:'uppercase',marginBottom:2}}>Last Story</div>
                       <div style={{fontSize:11,color:'#888',marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{(lastEp.title||'').split(' | ')[0]}</div>
-                      <div style={{fontSize:13,fontWeight:700,color:'#eee',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastEp.ytTitle||(lastEp.title||'').split(' | ')[1]||lastEp.title}</div>
+                      {/* Main title: selected title agar hai toh woh, warna ytTitle ya split title */}
+                      <div style={{fontSize:13,fontWeight:700,color: selectedTitle ? '#66dd99' : '#eee',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                        {selectedTitle || lastEp.ytTitle || (lastEp.title||'').split(' | ')[1] || lastEp.title}
+                      </div>
                       <div style={{fontSize:10,color:'#554455',marginTop:1}}>{lastEp.season||'Season 1'} · {lastEp.epNum||'EP 01'}</div>
                     </div>
                   </div>
@@ -316,30 +368,129 @@ function YoutubePage({ user }) {
             )}
           </div>
 
-          {/* ── Title Generator ── */}
+          {/* ── Title Generator — Single Title Flow ── */}
           <CollapseCard title="🎯 YouTube Title Generator" titleColor="#44bb66" bg="#000a00" borderColor="#003300" defaultOpen>
-            <div style={{fontSize:12,color:'#666',lineHeight:1.6,marginBottom:8}}>7 clickbait Hindi titles AI se — high CTR ke liye</div>
+            <div style={{fontSize:12,color:'#666',lineHeight:1.6,marginBottom:8}}>
+              Story se ek viral Hindi title — next dabao aur swap karo
+            </div>
+
+            {/* Generate button */}
             <button className="btn btn-primary" onClick={generateYtTitles} disabled={titlesLoading}
-              style={{background:'linear-gradient(135deg,#005500,#002200)',boxShadow:'0 4px 16px rgba(0,150,0,0.3)'}}>
-              {titlesLoading?<><div className="spinner"/>Titles ban rahe hain...</>:'🎯 Titles Generate Karo'}
+              style={{background:'linear-gradient(135deg,#005500,#002200)',boxShadow:'0 4px 16px rgba(0,150,0,0.3)',marginBottom: generatedTitles.length ? 12 : 0}}>
+              {titlesLoading
+                ? <><div className="spinner"/>Title ban raha hai...</>
+                : generatedTitles.length ? '🔄 Naye Titles Generate Karo' : '🎯 Title Generate Karo'}
             </button>
-            {titles.length>0 && (
-              <div className="yt-output-card">
-                <div style={{fontSize:10,color:'#446644',marginBottom:6,letterSpacing:1}}>TAP TO SELECT · AGAIN TAP = DESELECT</div>
-                {titles.map((t,i)=>{
-                  const isSelected = selectedTitle === t;
-                  return (
-                    <div key={i} className="yt-title-option"
-                      onClick={()=>setSelectedTitle(isSelected ? '' : t)}
-                      style={{cursor:'pointer', background: isSelected ? 'rgba(0,180,80,0.12)' : 'transparent', border: isSelected ? '1px solid rgba(0,180,80,0.35)' : '1px solid transparent', borderRadius:8, padding:'2px 4px', transition:'all 0.2s'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        <span style={{fontSize:14,flexShrink:0}}>{isSelected ? '✅' : '⬜'}</span>
-                        <div className="yt-title-text" style={{color: isSelected ? '#66dd99' : undefined}}>{t}</div>
-                      </div>
-                      <button className="yt-copy-btn" onClick={e=>{e.stopPropagation();copyText(t,'Title')}}>📋 Copy</button>
-                    </div>
-                  );
-                })}
+
+            {/* Single title display card */}
+            {generatedTitles.length > 0 && !titlesLoading && (
+              <div style={{background:'#020d02',border:'1px solid #003300',borderRadius:12,padding:14,display:'flex',flexDirection:'column',gap:12}}>
+
+                {/* Title counter */}
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <span style={{fontSize:9,color:'#446644',letterSpacing:1.5,textTransform:'uppercase'}}>
+                    Title {currentTitleIdx + 1} / {generatedTitles.length}
+                  </span>
+                  {isCurrentSelected && (
+                    <span style={{fontSize:9,color:'#44bb66',background:'rgba(0,180,80,0.12)',border:'1px solid rgba(0,180,80,0.3)',padding:'2px 8px',borderRadius:20,fontWeight:700}}>
+                      ✅ Selected
+                    </span>
+                  )}
+                </div>
+
+                {/* Title text */}
+                <div style={{
+                  fontSize:15,
+                  fontWeight:700,
+                  color: isCurrentSelected ? '#66dd99' : '#ddffdd',
+                  lineHeight:1.5,
+                  fontFamily:"'Noto Sans Devanagari',sans-serif",
+                  padding:'10px 12px',
+                  background: isCurrentSelected ? 'rgba(0,180,80,0.08)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${isCurrentSelected ? 'rgba(0,180,80,0.3)' : '#1a3a1a'}`,
+                  borderRadius:8,
+                  minHeight:60,
+                  display:'flex',
+                  alignItems:'center',
+                }}>
+                  {currentTitle}
+                </div>
+
+                {/* Action buttons */}
+                <div style={{display:'flex',gap:8}}>
+                  {/* Next Title */}
+                  <button
+                    onClick={nextTitle}
+                    style={{
+                      flex:1,
+                      background:'#0a1a0a',
+                      border:'1px solid #224422',
+                      color:'#44aa44',
+                      borderRadius:8,
+                      fontSize:12,
+                      padding:'10px 8px',
+                      cursor:'pointer',
+                      fontWeight:600,
+                      display:'flex',
+                      alignItems:'center',
+                      justifyContent:'center',
+                      gap:4,
+                    }}>
+                    ▶ Next Title
+                  </button>
+
+                  {/* Select This Title */}
+                  <button
+                    onClick={selectAndSaveTitle}
+                    disabled={isSavingTitle || isCurrentSelected}
+                    style={{
+                      flex:2,
+                      background: isCurrentSelected
+                        ? 'rgba(0,180,80,0.1)'
+                        : 'linear-gradient(135deg,#004400,#002200)',
+                      border: `1px solid ${isCurrentSelected ? 'rgba(0,180,80,0.4)' : '#006600'}`,
+                      color: isCurrentSelected ? '#44bb66' : '#88ff88',
+                      borderRadius:8,
+                      fontSize:12,
+                      padding:'10px 8px',
+                      cursor: isCurrentSelected ? 'default' : 'pointer',
+                      fontWeight:700,
+                      display:'flex',
+                      alignItems:'center',
+                      justifyContent:'center',
+                      gap:4,
+                      opacity: isSavingTitle ? 0.6 : 1,
+                    }}>
+                    {isSavingTitle
+                      ? <><div className="spinner"/>Saving...</>
+                      : isCurrentSelected
+                        ? '✅ Selected'
+                        : '✔ Select This Title'}
+                  </button>
+
+                  {/* Copy */}
+                  <button
+                    onClick={()=>copyText(currentTitle,'Title')}
+                    style={{
+                      background:'#0a0a1a',
+                      border:'1px solid #222244',
+                      color:'#6688cc',
+                      borderRadius:8,
+                      fontSize:12,
+                      padding:'10px 10px',
+                      cursor:'pointer',
+                      fontWeight:600,
+                    }}>
+                    📋
+                  </button>
+                </div>
+
+                {/* Selected title info */}
+                {selectedTitle && !isCurrentSelected && (
+                  <div style={{fontSize:10,color:'#446644',padding:'6px 10px',background:'rgba(0,100,0,0.08)',borderRadius:6,border:'1px solid #1a3a1a'}}>
+                    ✅ Selected: <span style={{color:'#66dd99',fontFamily:"'Noto Sans Devanagari',sans-serif"}}>{selectedTitle}</span>
+                  </div>
+                )}
               </div>
             )}
           </CollapseCard>
