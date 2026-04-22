@@ -37,12 +37,12 @@ function MyStoriesPage({ user }) {
   const [seasonEps, setSeasonEps] = useState([]);
 
   // YouTube data cache
-  const [ytVideos,  setYtVideos]  = useState([]);   // all videos
-  const [ytRankMap, setYtRankMap] = useState({});   // videoId -> rank
+  const [ytVideos,  setYtVideos]  = useState([]);
+  const [ytRankMap, setYtRankMap] = useState({});
   const ytLoaded = useRef(false);
 
   // ── Inline player state ──
-  const [activeEp,      setActiveEp]      = useState(null);  // episode being played/continued
+  const [activeEp,      setActiveEp]      = useState(null);
   const [playerChunks,  setPlayerChunks]  = useState([]);
   const [playerEnded,   setPlayerEnded]   = useState(false);
   const [isGenerating,  setIsGenerating]  = useState(false);
@@ -57,6 +57,14 @@ function MyStoriesPage({ user }) {
   const [narration,        setNarration]        = useState('');
   const [narrationLoading, setNarrationLoading] = useState(false);
   const [showNarration,    setShowNarration]    = useState(false);
+
+  // ── New: scene accordion + bg music ──
+  const [expandedScene,  setExpandedScene]  = useState(null);
+  const [bgMusic,        setBgMusic]        = useState([]);
+  const [bgMusicLoading, setBgMusicLoading] = useState(false);
+  const [bgMusicQuery,   setBgMusicQuery]   = useState('');
+  const [selectedMusic,  setSelectedMusic]  = useState(null);
+
   const storyAreaRef  = useRef(null);
   const isGenRef      = useRef(false);
   const stateRef      = useRef({});
@@ -133,7 +141,7 @@ function MyStoriesPage({ user }) {
   }
 
   // ── Delete entire story ────────────────────────────
-  const [deleteConfirmStory, setDeleteConfirmStory] = useState(null); // baseTitle
+  const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
   const [deleteInput,        setDeleteInput]        = useState('');
 
   async function confirmDeleteStory(baseTitle) {
@@ -161,6 +169,8 @@ function MyStoriesPage({ user }) {
     setScenes(ep.savedScenes || null);
     setChars(ep.savedChars || null);
     setShowAnalysis(false);
+    setExpandedScene(null);
+    setBgMusic([]); setSelectedMusic(null); setBgMusicQuery('');
     stateRef.current = {
       title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
       currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
@@ -255,7 +265,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
       setPlayerChunks(final); setPlayerEnded(true); setShowEndBanner(true);
       await saveEpisode(final,true);
       toast('✅ Episode save ho gaya!');
-      // Generate subtitle for this episode
       setTimeout(async ()=>{
         const newTitle = await generateSubtitle(activeEp, final);
         if (newTitle && activeEp) {
@@ -315,7 +324,7 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     }).filter(s => s.title);
   }
 
-  // ── Characters with reference image system ─────────
+  // ── Characters ─────────────────────────────────────
   async function generateCharsAuto(chunks) {
     setCharsLoading(true);
     const storyText=(chunks||playerChunks).map(c=>c.text).join('\n\n');
@@ -338,9 +347,28 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     setCharsLoading(false);
   }
 
+  // ── Background Music Search (Pixabay) ──────────────
+  async function searchBgMusic(customQuery) {
+    // Get your free key at: https://pixabay.com/api/docs/
+    const PIXABAY_KEY = process.env.NEXT_PUBLIC_PIXABAY_KEY;
+    setBgMusicLoading(true); setBgMusic([]); setSelectedMusic(null);
+    const q = customQuery || bgMusicQuery || 'horror dark suspense';
+    try {
+      const res = await fetch(
+        `https://pixabay.com/api/videos/music/?key=${PIXABAY_KEY}&q=${encodeURIComponent(q)}&per_page=8`
+      );
+      const data = await res.json();
+      if (data.hits?.length) {
+        setBgMusic(data.hits);
+      } else {
+        toast('⚠️ Koi music nahi mila — query change karo');
+      }
+    } catch(e) { toast('❌ Music search failed: ' + e.message); }
+    setBgMusicLoading(false);
+  }
+
   // ── Next Episode ─────────────────────────────────
   async function startNextEpisode() {
-    // Save current episode as ended in Firebase first
     if (playerChunks.length && activeEp) {
       const { db_saveEpisode } = await import('../../lib/firebase');
       await db_saveEpisode(user.uid, { ...activeEp, storyChunks: playerChunks, ended: true, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
@@ -356,23 +384,21 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     const placeholderTitle = `${baseTitle} | ... | SEASON ${seasonFmt} EP ${epFmt}`;
     const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, title:placeholderTitle, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
     stateRef.current = { ...stateRef.current, epNum:nextNum, currentEpId:newEpId, title:placeholderTitle, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null, seasonBible:bible };
-    // Save stub episode to Firebase so it shows in list immediately
     const { db_saveEpisode } = await import('../../lib/firebase');
     await db_saveEpisode(user.uid, { ...newEp, savedAt: Date.now() });
     setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
+    setExpandedScene(null); setBgMusic([]); setSelectedMusic(null); setBgMusicQuery('');
     await loadEpisodes();
     setScreen('player');
     toast('▶ '+nextNum+' shuru ho raha hai...');
   }
 
   async function endSeason() {
-    // Mark all eps in current season as ended in Firebase
     const { db_saveEpisode } = await import('../../lib/firebase');
     for (const ep of seasonEps) {
       await db_saveEpisode(user.uid, { ...ep, ended: true, seasonEnded: true, savedAt: Date.now() });
     }
-    // Also save current ep
     if (playerChunks.length && activeEp) {
       await db_saveEpisode(user.uid, { ...activeEp, storyChunks: playerChunks, ended: true, seasonEnded: true, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
     }
@@ -390,11 +416,11 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     const placeholderTitle = `${baseTitle} | ... | SEASON ${seasonFmt} EP 01`;
     const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, title:placeholderTitle, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
     stateRef.current = { ...stateRef.current, season:nextSzn, epNum:'EP 01', currentEpId:newEpId, title:placeholderTitle, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null };
-    // Save stub to Firebase immediately so episode shows in list
     const { db_saveEpisode } = await import('../../lib/firebase');
     await db_saveEpisode(user.uid, { ...newEp, savedAt: Date.now() });
     setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
+    setExpandedScene(null); setBgMusic([]); setSelectedMusic(null); setBgMusicQuery('');
     await loadEpisodes();
     setScreen('player');
     toast('🏁 '+nextSzn+' shuru ho raha hai!');
@@ -421,14 +447,12 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     setNarrationLoading(false);
   }
 
-  // ── Generate episode subtitle ────────────────────
   async function generateSubtitle(ep, chunks) {
     try {
       const storySnippet = (chunks||[]).map(c=>c.text).join(' ').slice(0,400);
       const baseTitle = (ep.title||'').split(' | ')[0].trim();
       const season = ep.season||'SEASON 1';
       const epNum  = ep.epNum||'EP 01';
-      // Format: SEASON 01 EP 01
       const seasonFmt = season.replace('SEASON ','').padStart(2,'0');
       const epFmt = epNum.replace('EP ','').padStart(2,'0');
       const seasonEpStr = `SEASON ${seasonFmt} EP ${epFmt}`;
@@ -440,7 +464,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
       const data = await res.json();
       const subtitle = data.choices?.[0]?.message?.content?.trim()||'';
       if (!subtitle) return null;
-      // Full title: baseTitle | subtitle | SEASON X EP Y
       return `${baseTitle} | ${subtitle} | ${seasonEpStr}`;
     } catch { return null; }
   }
@@ -448,7 +471,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
   function scrollBottom(){setTimeout(()=>{if(storyAreaRef.current)storyAreaRef.current.scrollTop=storyAreaRef.current.scrollHeight;},50);}
   function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('✅ Copied!'));}
 
-  // Build character-aware scene prompt
   function buildScenePrompt(scene, charList) {
     if (!charList?.length) return scene.imgprompt || '';
     const mentioned = charList.filter(c =>
@@ -505,7 +527,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
               </div>
             ))}
           </div>
-          {/* Analysis toggle in player */}
           {screen==='player'&&<button onClick={()=>setShowAnalysis(a=>!a)} style={{background:'none',border:'none',color:showAnalysis?'#cc2233':'#555',fontSize:18,cursor:'pointer',padding:4}}>🎬</button>}
           <div style={{width:screen==='player'?0:36,flexShrink:0}}/>
         </div>
@@ -528,7 +549,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                   const totalSeasons=new Set(epList.map(e=>e.season||'SEASON 1')).size;
                   const words=epList.reduce((s,e)=>s+(e.wordCount||0),0);
                   const latest=epList.sort((a,b)=>(b.savedAt||0)-(a.savedAt||0))[0];
-                  // total views across all episodes of this story
                   const totalViews=epList.reduce((sum,ep)=>{
                     const info=getEpYtInfo(ep);
                     return sum+(info?.video.viewCount||0);
@@ -549,7 +569,10 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                         </div>
                         <span style={{fontSize:18,color:'#330022',flexShrink:0}}>›</span>
                       </div>
-                
+                      {/* Delete story button */}
+                      <button
+                        onClick={e=>{e.stopPropagation();setDeleteConfirmStory(baseTitle);setDeleteInput('');}}
+                        style={{position:'absolute',top:10,right:10,background:'rgba(80,0,0,0.18)',border:'1px solid #330000',color:'#553333',fontSize:13,padding:'4px 8px',borderRadius:7,cursor:'pointer'}}>🗑</button>
                     </div>
                   );
                 })}
@@ -635,7 +658,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                     onMouseEnter={e=>e.currentTarget.style.borderColor=isTrending?'#aa2200':'#440033'}
                     onMouseLeave={e=>e.currentTarget.style.borderColor=isTrending?'#661100':'#1a0015'}>
 
-                    {/* Trending badge */}
                     {isTrending&&<div style={{position:'absolute',top:-6,right:10,background:'linear-gradient(135deg,#cc3300,#880000)',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:800,color:'#fff',letterSpacing:1}}>🔥 #1 TRENDING</div>}
 
                     <div style={{width:40,height:40,borderRadius:10,background:ep.ended?'linear-gradient(135deg,#003300,#001a00)':isTrending?'linear-gradient(135deg,#331100,#1a0800)':'linear-gradient(135deg,#1a0000,#0d0000)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,border:`1px solid ${ep.ended?'#004400':isTrending?'#551100':'#330000'}`}}>
@@ -663,7 +685,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                       <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
                         <span style={{fontSize:10,color:'#444'}}>{ep.wordCount||0} words</span>
                         {savedDate&&<span style={{fontSize:10,color:'#333'}}>· {savedDate}</span>}
-                        {/* YouTube badge */}
                         {ytInfo?(
                           <a href={`https://youtube.com/watch?v=${ytInfo.video.videoId}`} target="_blank"
                             onClick={e=>e.stopPropagation()}
@@ -679,7 +700,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                       </div>
                     </div>
 
-                    {/* Delete — only if not uploaded to YouTube */}
                     {!ytInfo&&(
                       <button onClick={e=>{e.stopPropagation();deleteEpisode(ep.id);}}
                         style={{flexShrink:0,background:'rgba(80,0,0,0.2)',border:'1px solid #330000',color:'#553333',fontSize:14,padding:'8px 10px',borderRadius:8,cursor:'pointer'}}>🗑</button>
@@ -722,7 +742,6 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                           <button className="btn btn-primary" onClick={()=>generateFullNarration(false)} style={{background:'linear-gradient(135deg,#005500,#003300)'}}>🎙 ElevenLabs Narration</button>
                           <button className="btn btn-ghost" onClick={()=>setShowAnalysis(true)}>🎬 Scenes & Characters</button>
                         </div>
-                        {/* Narration output */}
                         {showNarration&&(
                           <div style={{background:'#000a00',border:'1px solid #004400',borderRadius:8,padding:14,marginTop:8}}>
                             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
@@ -751,7 +770,7 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                     </div>
                   </div>
 
-                  {/* Bottom bar — disabled if season ended */}
+                  {/* Bottom bar */}
                   <div className="bottom-bar">
                     {seasonEnded||playerEnded?(
                       <div style={{textAlign:'center',padding:'8px',color:'#553333',fontSize:12}}>
@@ -780,21 +799,21 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                 </>
               )}
 
-              {/* Analysis panel */}
+              {/* ── Analysis panel ── */}
               {showAnalysis&&(
                 <div className="analysis-content" style={{flex:1,paddingBottom:80}}>
 
-                  {/* Characters */}
+                  {/* Characters — NO generate button, auto on story end */}
                   <div className="analysis-panel">
                     <div className="analysis-generate-bar">
                       <div style={{fontSize:11,color:'#888',fontWeight:700,marginBottom:4}}>👤 CHARACTERS</div>
                       <div className="analysis-hint">
-                        Har character ka reference image upload karo — AI usse scene prompts mein use karega.
-                        {chars?.length>0&&<span style={{color:'#44bb66'}}> {chars.length} characters ready.</span>}
+                        Har character ka reference image prompt yahan milega.
+                        {chars?.length>0
+                          ? <span style={{color:'#44bb66'}}> {chars.length} characters ready.</span>
+                          : <span style={{color:'#555'}}> Story end karo — auto generate ho jayega.</span>
+                        }
                       </div>
-                      <button className="btn btn-primary" onClick={()=>generateCharsAuto()} disabled={charsLoading||!playerChunks.length}>
-                        {charsLoading?<><div className="spinner"/>Generating...</>:'👤 Character List Generate Karo'}
-                      </button>
                     </div>
                     {chars?.map((c,i)=>(
                       <div key={i} className="char-card">
@@ -815,96 +834,190 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                     ))}
                   </div>
 
-                  {/* Scenes */}
+                  {/* Background Music */}
+                  <div className="analysis-panel" style={{marginTop:12}}>
+                    <div className="analysis-generate-bar">
+                      <div style={{fontSize:11,color:'#888',fontWeight:700,marginBottom:4}}>🎵 BACKGROUND MUSIC</div>
+                      <div className="analysis-hint" style={{marginBottom:8}}>
+                        Episode ke liye free non-copyrighted music — preview karo aur download karo.
+                      </div>
+                      {/* Quick tags */}
+                      <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}}>
+                        {['horror dark','suspense tension','haunted ambient','scary thriller','ghost mystery'].map(tag=>(
+                          <button key={tag} onClick={()=>{setBgMusicQuery(tag);searchBgMusic(tag);}}
+                            style={{background:'#1a000a',border:'1px solid #440022',color:'#cc4466',borderRadius:20,
+                              fontSize:10,padding:'3px 8px',cursor:'pointer',whiteSpace:'nowrap'}}>
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Custom search */}
+                      <div style={{display:'flex',gap:6}}>
+                        <input
+                          value={bgMusicQuery}
+                          onChange={e=>setBgMusicQuery(e.target.value)}
+                          onKeyDown={e=>e.key==='Enter'&&searchBgMusic()}
+                          placeholder="Custom search... (e.g. dark ambient)"
+                          style={{flex:1,background:'#0a0000',border:'1px solid #330000',color:'#ddd',
+                            padding:'8px 10px',borderRadius:8,fontSize:12,outline:'none'}}
+                        />
+                        <button onClick={()=>searchBgMusic()} disabled={bgMusicLoading}
+                          style={{background:'linear-gradient(135deg,#660022,#330011)',border:'1px solid #880033',
+                            color:'#fff',padding:'8px 14px',borderRadius:8,fontSize:12,cursor:'pointer',flexShrink:0}}>
+                          {bgMusicLoading?<div className="spinner"/>:'🔍'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {bgMusicLoading&&(
+                      <div style={{display:'flex',alignItems:'center',gap:8,color:'#cc4466',fontSize:12,padding:'12px 0'}}>
+                        <div className="spinner"/>Music dhoondh raha hai...
+                      </div>
+                    )}
+
+                    {bgMusic.length>0&&(
+                      <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:10}}>
+                        {bgMusic.map((track,ti)=>(
+                          <div key={ti}
+                            style={{background:selectedMusic?.id===track.id?'rgba(136,0,34,0.15)':'#0a0005',
+                              border:`1px solid ${selectedMusic?.id===track.id?'#880022':'#220011'}`,
+                              borderRadius:10,padding:'10px 12px',cursor:'pointer',transition:'border-color 0.2s'}}
+                            onClick={()=>setSelectedMusic(prev=>prev?.id===track.id?null:track)}>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontSize:16,flexShrink:0}}>{selectedMusic?.id===track.id?'🎵':'🎼'}</span>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                                  {track.tags?.split(',').slice(0,3).join(', ')||'Track '+(ti+1)}
+                                </div>
+                                <div style={{fontSize:10,color:'#555',marginTop:2}}>
+                                  {track.duration}s · Free · No Copyright
+                                </div>
+                              </div>
+                              <a href={track.audio} download target="_blank" rel="noreferrer"
+                                onClick={e=>e.stopPropagation()}
+                                style={{background:'linear-gradient(135deg,#003300,#001a00)',border:'1px solid #004400',
+                                  color:'#44bb66',borderRadius:6,padding:'6px 10px',fontSize:11,
+                                  textDecoration:'none',fontWeight:700,flexShrink:0}}>
+                                ⬇ DL
+                              </a>
+                            </div>
+                            {selectedMusic?.id===track.id&&(
+                              <div style={{marginTop:8}}>
+                                <audio controls src={track.audio} style={{width:'100%',height:32,marginBottom:6}}/>
+                                <a href={track.audio} download target="_blank" rel="noreferrer"
+                                  style={{display:'block',background:'linear-gradient(135deg,#004400,#002200)',
+                                    border:'1px solid #006600',color:'#44ee66',borderRadius:8,padding:'8px',
+                                    fontSize:12,textAlign:'center',textDecoration:'none',fontWeight:700}}>
+                                  ⬇ Full Download Karo
+                                </a>
+                                <div style={{fontSize:10,color:'#444',marginTop:4,textAlign:'center'}}>
+                                  Pixabay Music — Free for commercial use · No attribution required
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Scenes — accordion */}
                   <div className="analysis-panel" style={{marginTop:12}}>
                     <div className="analysis-generate-bar">
                       <div style={{fontSize:11,color:'#888',fontWeight:700,marginBottom:4}}>🎬 SCENES</div>
                       <div className="analysis-hint">
-                        Scene breakdown + image prompts.
-                        {chars?.length>0&&<span style={{color:'#44bb66'}}> Character references automatically included.</span>}
+                        Scene tap karo — prompts dekhne ke liye.
+                        {chars?.length>0&&<span style={{color:'#44bb66'}}> Character references included.</span>}
                       </div>
                       <button className="btn btn-primary" onClick={()=>generateScenesAuto()} disabled={scenesLoading||!playerChunks.length}>
                         {scenesLoading?<><div className="spinner"/>Scenes ban rahe hain...</>:'🎬 Scene Breakdown Generate Karo'}
                       </button>
                     </div>
-                    {scenes?.map((s, i) => {
-                      const sceneChars = s.chars_in_scene
-                        ? s.chars_in_scene.split(',').map(n => n.trim()).filter(Boolean)
-                        : [];
 
-                      const charPrompts = sceneChars.map(name => {
-                        const found = (chars || []).find(c => c.name?.toLowerCase() === name.toLowerCase());
-                        const visual = found?.visual || found?.desc || '';
-                        return `full body character sheet, front and back view, ${name}${visual ? ', ' + visual : ''}, webtoon 2D flat illustration, clean lineart, white background, character reference sheet, multiple expressions, multiple poses, consistent design across all poses, same face same outfit same colors in every pose, turnaround sheet`;
-                      });
+                    {scenes?.length>0&&(
+                      <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:10}}>
+                        {scenes.map((s,i)=>{
+                          const isOpen = expandedScene===i;
+                          const sceneChars = s.chars_in_scene
+                            ? s.chars_in_scene.split(',').map(n=>n.trim()).filter(Boolean)
+                            : [];
+                          const charPrompts = sceneChars.map(name=>{
+                            const found=(chars||[]).find(c=>c.name?.toLowerCase()===name.toLowerCase());
+                            const visual=found?.visual||found?.desc||'';
+                            return `full body character sheet, front and back view, ${name}${visual?', '+visual:''}, webtoon 2D flat illustration, clean lineart, white background, character reference sheet, multiple expressions, multiple poses, consistent design across all poses, same face same outfit same colors in every pose, turnaround sheet`;
+                          });
+                          const imagePrompt = s.imgprompt||'';
+                          const videoPrompt = `Convert this illustration to a short animated video clip (3-5 seconds). Subtle motion only — eyes blinking, cloth movement, hair sway, atmospheric fog. Maintain the exact webtoon 2D flat illustration style. No camera movement. Dark horror atmosphere. Keep all character appearances identical to the reference image.${sceneChars.length?` Characters present: ${sceneChars.join(', ')}.`:''}`;
 
-                      const imagePrompt = s.imgprompt || '';
+                          return (
+                            <div key={i}
+                              style={{background:isOpen?'rgba(80,0,20,0.12)':'#080008',
+                                border:`1px solid ${isOpen?'#660022':'#1a0015'}`,
+                                borderRadius:12,overflow:'hidden',transition:'border-color 0.2s'}}>
 
-                      const videoPrompt = `Convert this illustration to a short animated video clip (3-5 seconds). Subtle motion only — eyes blinking, cloth movement, hair sway, atmospheric fog. Maintain the exact webtoon 2D flat illustration style. No camera movement. Dark horror atmosphere. Keep all character appearances identical to the reference image.${sceneChars.length ? ` Characters present: ${sceneChars.join(', ')}.` : ''}`;
+                              {/* Scene header — tap to toggle */}
+                              <div onClick={()=>setExpandedScene(isOpen?null:i)}
+                                style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                                    <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5}}>🎬 SCENE {s.num}</span>
+                                    <span style={{fontSize:9,color:'#444',letterSpacing:1}}>{(s.mood||'').toUpperCase()}</span>
+                                  </div>
+                                  <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.title}</div>
+                                  <div style={{fontSize:10,color:'#555',marginTop:2}}>📍 {s.location}</div>
+                                </div>
+                                {sceneChars.length>0&&(
+                                  <div style={{display:'flex',gap:3,flexShrink:0}}>
+                                    {sceneChars.slice(0,2).map((name,ci)=>(
+                                      <span key={ci} style={{fontSize:9,padding:'2px 6px',background:'#1a0000',border:'1px solid #440000',borderRadius:20,color:'#cc4444'}}>
+                                        👤{name.split(' ')[0]}
+                                      </span>
+                                    ))}
+                                    {sceneChars.length>2&&<span style={{fontSize:9,color:'#444',alignSelf:'center'}}>+{sceneChars.length-2}</span>}
+                                  </div>
+                                )}
+                                <span style={{fontSize:16,color:'#440022',flexShrink:0,marginLeft:4}}>{isOpen?'▲':'▼'}</span>
+                              </div>
 
-                      return (
-                        <div key={i} className="scene-card">
-                          <div className="scene-num">🎬 Scene {s.num} <span style={{color:'#444',fontSize:9}}>{(s.mood||'').toUpperCase()}</span></div>
-                          <div className="scene-title">{s.title}</div>
-                          <div className="scene-meta"><span className="scene-tag">📍 {s.location}</span></div>
-                          <div className="scene-desc">{s.what}</div>
-
-                          {sceneChars.length > 0 && (
-                            <div style={{display:'flex',flexWrap:'wrap',gap:6,margin:'8px 0 4px'}}>
-                              {sceneChars.map((name, ci) => (
-                                <span key={ci} style={{
-                                  fontSize:10, padding:'3px 8px',
-                                  background:'#1a0000', border:'1px solid #440000',
-                                  borderRadius:20, color:'#cc4444', letterSpacing:0.5
-                                }}>👤 {name}</span>
-                              ))}
+                              {/* Expanded prompts */}
+                              {isOpen&&(
+                                <div style={{padding:'0 14px 14px',borderTop:'1px solid #220011'}}>
+                                  <div style={{fontSize:12,color:'#888',lineHeight:1.7,margin:'10px 0 8px'}}>{s.what}</div>
+                                  {sceneChars.length>0&&(
+                                    <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:10}}>
+                                      {sceneChars.map((name,ci)=>(
+                                        <span key={ci} style={{fontSize:10,padding:'3px 8px',background:'#1a0000',border:'1px solid #440000',borderRadius:20,color:'#cc4444'}}>👤 {name}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                                    {sceneChars.length>0&&charPrompts.map((cp,ci)=>(
+                                      <button key={ci}
+                                        onClick={()=>navigator.clipboard.writeText(cp).then(()=>toast(`✅ ${sceneChars[ci]} character prompt copy!`))}
+                                        style={{background:'#0a000a',border:'1px solid #440044',color:'#cc66cc',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
+                                        👤 Copy: {sceneChars[ci]} Character Prompt
+                                      </button>
+                                    ))}
+                                    {imagePrompt&&(
+                                      <button
+                                        onClick={()=>navigator.clipboard.writeText(imagePrompt).then(()=>toast('✅ Image prompt copy!'))}
+                                        style={{background:'#0a0000',border:'1px solid #440000',color:'#cc4444',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
+                                        🖼 Copy: Scene Image Prompt
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={()=>navigator.clipboard.writeText(videoPrompt).then(()=>toast('✅ Video prompt copy!'))}
+                                      style={{background:'#000a0a',border:'1px solid #004444',color:'#44aaaa',borderRadius:8,fontSize:12,padding:'8px 10px',cursor:'pointer',width:'100%',textAlign:'left'}}>
+                                      🎬 Copy: Image → Video Prompt
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
-
-                          <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:10}}>
-
-                            {sceneChars.length > 0 && charPrompts.map((cp, ci) => (
-                              <button key={ci}
-                                onClick={() => copyText(cp) && toast(`✅ ${sceneChars[ci]} character prompt copy ho gaya!`)}
-                                onClickCapture={() => navigator.clipboard.writeText(cp).then(() => toast(`✅ ${sceneChars[ci]} character prompt copy ho gaya!`))}
-                                style={{
-                                  background:'#0a000a', border:'1px solid #440044',
-                                  color:'#cc66cc', borderRadius:8, fontSize:12,
-                                  padding:'8px 10px', cursor:'pointer', width:'100%',
-                                  textAlign:'left'
-                                }}>
-                                👤 Copy: {sceneChars[ci]} Character Prompt
-                              </button>
-                            ))}
-
-                            {imagePrompt && (
-                              <button
-                                onClick={() => navigator.clipboard.writeText(imagePrompt).then(() => toast('✅ Image prompt copy ho gaya!'))}
-                                style={{
-                                  background:'#0a0000', border:'1px solid #440000',
-                                  color:'#cc4444', borderRadius:8, fontSize:12,
-                                  padding:'8px 10px', cursor:'pointer', width:'100%',
-                                  textAlign:'left'
-                                }}>
-                                🖼 Copy: Scene Image Prompt
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => navigator.clipboard.writeText(videoPrompt).then(() => toast('✅ Video prompt copy ho gaya!'))}
-                              style={{
-                                background:'#000a0a', border:'1px solid #004444',
-                                color:'#44aaaa', borderRadius:8, fontSize:12,
-                                padding:'8px 10px', cursor:'pointer', width:'100%',
-                                textAlign:'left'
-                              }}>
-                              🎬 Copy: Image → Video Prompt
-                            </button>
-
-                          </div>
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                 </div>
