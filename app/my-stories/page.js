@@ -693,13 +693,6 @@ function MyStoriesPage({ user }) {
                           <div key={i} className="char-card">
                             <div className="char-name"><span style={{fontSize:12,color:'#666',marginRight:4}}>#{i+1}</span>{c.name}<span className="char-role-badge">{c.role}</span></div>
                             <div className="char-desc">{c.desc}</div>
-                            {c.visual&&(
-                              <div style={{background:'#0a000f',border:'1px solid #2a003a',borderRadius:8,padding:'8px 10px',marginTop:6}}>
-                                <div style={{fontSize:9,color:'#bb66ff',letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>🖼 Reference Image Prompt #{i+1}</div>
-                                <div style={{fontSize:12,color:'#c8c8c8',lineHeight:1.7}}>{c.visual}</div>
-                                <button onClick={()=>copyText(c.visual)} style={{marginTop:6,background:'transparent',border:'1px solid #440066',color:'#cc88ff',padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer'}}>📋 Copy Visual Prompt</button>
-                              </div>
-                            )}
                             {c.appear&&<div className="char-appear">📍 {c.appear}</div>}
                           </div>
                         ))}
