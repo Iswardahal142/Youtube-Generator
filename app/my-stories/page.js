@@ -54,6 +54,9 @@ function MyStoriesPage({ user }) {
   const [scenesLoading, setScenesLoading] = useState(false);
   const [charsLoading,  setCharsLoading]  = useState(false);
   const [showAnalysis,  setShowAnalysis]  = useState(false);
+  const [narration,        setNarration]        = useState('');
+  const [narrationLoading, setNarrationLoading] = useState(false);
+  const [showNarration,    setShowNarration]    = useState(false);
   const storyAreaRef  = useRef(null);
   const isGenRef      = useRef(false);
   const stateRef      = useRef({});
@@ -323,6 +326,53 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     setCharsLoading(false);
   }
 
+  // ── Next Episode ─────────────────────────────────
+  async function startNextEpisode() {
+    const epMatch  = (activeEp?.epNum||'EP 01').match(/(\d+)/);
+    const nextNum  = 'EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
+    const bible    = (stateRef.current.seasonBible||'')+'\n\n['+activeEp?.season+' '+activeEp?.epNum+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
+    const newEpId  = Date.now().toString();
+    const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null };
+    stateRef.current = { ...stateRef.current, epNum:nextNum, currentEpId:newEpId, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null, seasonBible:bible };
+    setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
+    setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
+    toast('▶ '+nextNum+' shuru ho raha hai...');
+    await loadEpisodes();
+  }
+
+  async function startNextSeason() {
+    const sMatch   = (activeEp?.season||'SEASON 1').match(/(\d+)/);
+    const nextSzn  = 'SEASON '+((sMatch?parseInt(sMatch[1]):1)+1);
+    const newEpId  = Date.now().toString();
+    const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null };
+    stateRef.current = { ...stateRef.current, season:nextSzn, epNum:'EP 01', currentEpId:newEpId, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null };
+    setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
+    setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
+    toast('🏁 '+nextSzn+' shuru ho raha hai!');
+    await loadEpisodes();
+  }
+
+  async function generateFullNarration(forceRegen=false) {
+    if (!playerChunks.length) { toast('⚠️ Story nahi hai!'); return; }
+    if (narration && !forceRegen) { setShowNarration(true); return; }
+    setNarrationLoading(true); setShowNarration(true);
+    const fullStory = playerChunks.map(c=>c.text).join('\n\n');
+    try {
+      const res = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:2500, temperature:0.7,
+          messages:[
+            { role:'system', content:`Tu ek professional Hindi horror narrator hai jo ElevenLabs ke liye script likhta hai.\nSirf Hindi Devanagari. ElevenLabs break tags use karo:\n<break time="0.5s" /> <break time="1.0s" /> <break time="1.5s" /> <break time="2.0s" />\nEmotion tags: [scared] [whisper] [laugh] [cry] [angry] [shocked] [calm]` },
+            { role:'user', content:`Yeh horror story hai:\n\n${fullStory}\n\nPoori story ka ElevenLabs-ready HINDI NARRATION script likho.\n- Sirf Hindi Devanagari\n- Break tags sahi jagah lagao\n- Emotion tags use karo\n- Koi heading mat lagao, seedha narration shuru karo` },
+          ],
+        }),
+      });
+      const data = await res.json();
+      const nar  = data.choices?.[0]?.message?.content?.trim()||'';
+      if (nar) { setNarration(nar); stateRef.current.savedNarration=nar; }
+    } catch(err) { toast('❌ '+err.message); }
+    setNarrationLoading(false);
+  }
+
   function scrollBottom(){setTimeout(()=>{if(storyAreaRef.current)storyAreaRef.current.scrollTop=storyAreaRef.current.scrollHeight;},50);}
   function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('✅ Copied!'));}
 
@@ -427,10 +477,7 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                         </div>
                         <span style={{fontSize:18,color:'#330022',flexShrink:0}}>›</span>
                       </div>
-                      {/* Delete story button */}
-                      <button
-                        onClick={e=>{e.stopPropagation();setDeleteConfirmStory(baseTitle);setDeleteInput('');}}
-                        style={{position:'absolute',top:10,right:10,background:'rgba(80,0,0,0.25)',border:'1px solid #330000',color:'#663333',fontSize:13,padding:'5px 8px',borderRadius:7,cursor:'pointer',lineHeight:1}}>🗑</button>
+                
                     </div>
                   );
                 })}
@@ -550,8 +597,8 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                       </div>
                     </div>
 
-                    {/* Delete — only if not uploaded and not season-locked */}
-                    {!ytInfo&&!seasonDone&&(
+                    {/* Delete — only if not uploaded to YouTube */}
+                    {!ytInfo&&(
                       <button onClick={e=>{e.stopPropagation();deleteEpisode(ep.id);}}
                         style={{flexShrink:0,background:'rgba(80,0,0,0.2)',border:'1px solid #330000',color:'#553333',fontSize:14,padding:'8px 10px',borderRadius:8,cursor:'pointer'}}>🗑</button>
                     )}
@@ -585,7 +632,29 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                       <div className="end-banner show" style={{margin:'0 16px 16px'}}>
                         <div className="end-banner-title">🩸 The End 🩸</div>
                         <div className="end-banner-sub">{activeEp.season} · {activeEp.epNum} complete!</div>
-                        {seasonEnded&&<div style={{fontSize:11,color:'#cc6600',background:'rgba(80,30,0,0.15)',border:'1px solid #441100',borderRadius:8,padding:'8px 12px'}}>🔒 Season complete — edit nahi ho sakta</div>}
+                        {seasonEnded&&<div style={{fontSize:11,color:'#cc6600',background:'rgba(80,30,0,0.15)',border:'1px solid #441100',borderRadius:8,padding:'8px 12px',marginBottom:10}}>🔒 Season complete — editing band hai</div>}
+                        <div className="btn-row" style={{flexWrap:'wrap',gap:8}}>
+                          {!seasonEnded&&<button className="btn btn-primary" onClick={startNextEpisode}>▶ Next Episode</button>}
+                          {seasonEnded&&<button className="btn btn-ghost" onClick={startNextSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🏁 Next Season Shuru Karo</button>}
+                          <button className="btn btn-primary" onClick={()=>generateFullNarration(false)} style={{background:'linear-gradient(135deg,#005500,#003300)'}}>🎙 ElevenLabs Narration</button>
+                          <button className="btn btn-ghost" onClick={()=>setShowAnalysis(true)}>🎬 Scenes & Characters</button>
+                        </div>
+                        {/* Narration output */}
+                        {showNarration&&(
+                          <div style={{background:'#000a00',border:'1px solid #004400',borderRadius:8,padding:14,marginTop:8}}>
+                            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                              <div style={{fontSize:10,color:'#44bb66',letterSpacing:2,textTransform:'uppercase'}}>🎙 ElevenLabs Narration</div>
+                              <button onClick={()=>generateFullNarration(true)} style={{background:'transparent',border:'1px solid #555',color:'#888',fontSize:10,padding:'4px 10px',borderRadius:6,cursor:'pointer'}}>🔄 Dobara</button>
+                            </div>
+                            {narrationLoading
+                              ? <div style={{display:'flex',alignItems:'center',gap:8,color:'#44bb66',fontSize:12}}><div className="spinner"/>Narration ban rahi hai...</div>
+                              : <div style={{fontSize:14,color:'#c8e8c8',lineHeight:1.9,whiteSpace:'pre-wrap'}}>{narration}</div>
+                            }
+                            {narration&&!narrationLoading&&(
+                              <button onClick={()=>copyText(narration)} style={{marginTop:12,background:'transparent',border:'1px solid #44bb66',color:'#44bb66',padding:'6px 14px',borderRadius:6,fontSize:12,cursor:'pointer'}}>📋 ElevenLabs ke liye Copy</button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
