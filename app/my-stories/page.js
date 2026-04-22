@@ -328,11 +328,16 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
 
   // ── Next Episode ─────────────────────────────────
   async function startNextEpisode() {
+    // Save current episode as ended in Firebase first
+    if (playerChunks.length && activeEp) {
+      const { db_saveEpisode } = await import('../../lib/firebase');
+      await db_saveEpisode(user.uid, { ...activeEp, storyChunks: playerChunks, ended: true, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
+    }
     const epMatch  = (activeEp?.epNum||'EP 01').match(/(\d+)/);
     const nextNum  = 'EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
-    const bible    = (stateRef.current.seasonBible||'')+'\n\n['+activeEp?.season+' '+activeEp?.epNum+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
+    const bible    = (stateRef.current.seasonBible||'')+'\n\n['+(activeEp?.season||'SEASON 1')+' '+(activeEp?.epNum||'EP 01')+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
     const newEpId  = Date.now().toString();
-    const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null };
+    const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
     stateRef.current = { ...stateRef.current, epNum:nextNum, currentEpId:newEpId, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null, seasonBible:bible };
     setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
@@ -340,11 +345,26 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     await loadEpisodes();
   }
 
+  async function endSeason() {
+    // Mark all eps in current season as ended in Firebase
+    const { db_saveEpisode } = await import('../../lib/firebase');
+    for (const ep of seasonEps) {
+      await db_saveEpisode(user.uid, { ...ep, ended: true, seasonEnded: true, savedAt: Date.now() });
+    }
+    // Also save current ep
+    if (playerChunks.length && activeEp) {
+      await db_saveEpisode(user.uid, { ...activeEp, storyChunks: playerChunks, ended: true, seasonEnded: true, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
+    }
+    setActiveEp(prev => ({ ...prev, seasonEnded: true }));
+    toast('🔒 Season end ho gaya!');
+    await loadEpisodes();
+  }
+
   async function startNextSeason() {
     const sMatch   = (activeEp?.season||'SEASON 1').match(/(\d+)/);
     const nextSzn  = 'SEASON '+((sMatch?parseInt(sMatch[1]):1)+1);
     const newEpId  = Date.now().toString();
-    const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null };
+    const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
     stateRef.current = { ...stateRef.current, season:nextSzn, epNum:'EP 01', currentEpId:newEpId, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null };
     setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
@@ -400,7 +420,7 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
   ];
   const TARGET=1500;
   const wcPct=Math.min(100,(wordCount/TARGET)*100);
-  const seasonEnded=activeEp?.seasonEnded||false;
+  const seasonEnded = activeEp?.seasonEnded || seasonEps.every(e => e.ended && e.seasonEnded) || false;
 
   // ─── RENDER ────────────────────────────────────────
   return (
@@ -635,7 +655,8 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                         {seasonEnded&&<div style={{fontSize:11,color:'#cc6600',background:'rgba(80,30,0,0.15)',border:'1px solid #441100',borderRadius:8,padding:'8px 12px',marginBottom:10}}>🔒 Season complete — editing band hai</div>}
                         <div className="btn-row" style={{flexWrap:'wrap',gap:8}}>
                           {!seasonEnded&&<button className="btn btn-primary" onClick={startNextEpisode}>▶ Next Episode</button>}
-                          {seasonEnded&&<button className="btn btn-ghost" onClick={startNextSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🏁 Next Season Shuru Karo</button>}
+                          {!seasonEnded&&<button className="btn btn-ghost" onClick={endSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🔒 Season End Karo</button>}
+                          {seasonEnded&&<button className="btn btn-ghost" onClick={startNextSeason} style={{borderColor:'#44bb66',color:'#44bb66'}}>🏁 Next Season Shuru Karo</button>}
                           <button className="btn btn-primary" onClick={()=>generateFullNarration(false)} style={{background:'linear-gradient(135deg,#005500,#003300)'}}>🎙 ElevenLabs Narration</button>
                           <button className="btn btn-ghost" onClick={()=>setShowAnalysis(true)}>🎬 Scenes & Characters</button>
                         </div>
