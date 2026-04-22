@@ -242,31 +242,44 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
   // ── Scenes ─────────────────────────────────────────
   async function generateScenesAuto(chunks) {
     setScenesLoading(true);
-    const storyText=(chunks||playerChunks).map(c=>c.text).join('\n\n');
-    const charBible=stateRef.current.characterBible||null;
-    const charDesc = charBible?.length
-      ? '\n\nCHARACTER REFERENCE IMAGES (har scene ke imgprompt mein inhe mention karo):\n'+
-        charBible.map((c,i)=>`Character ${i+1} — ${c.name}: Reference image #${i+1} use karo. ${c.visual||''}`).join('\n')
+    const storyText = (chunks || playerChunks).map(c => c.text).join('\n\n');
+    const curChars  = stateRef.current.savedChars || chars || [];
+    const charList  = curChars.length
+      ? curChars.map(c => `${c.name} (${c.role})`).join(', ')
       : '';
-    try{
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,
-          messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}${charDesc}\n\nMINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nimgprompt: [English — dark horror cinematic.${charBible?.length?' CHARACTER REFERENCES: '+charBible.map((c,i)=>`use reference image #${i+1} for ${c.name}`).join(', ')+'.':''} 50-70 words.]\nSCENE_END\n\nSirf format.`}],
-        })});
-      const data=await res.json();
-      const raw=data.choices?.[0]?.message?.content||'';
-      const parsed=parseScenes(raw);
-      if(parsed.length){setScenes(parsed);stateRef.current.savedScenes=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} scenes ready!`);}
-    }catch(e){toast('❌ Scenes: '+e.message);}
+    try {
+      const res = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'openai/gpt-4o-mini', max_tokens: 3000, temperature: 0.35,
+          messages: [{ role: 'user', content: `Story: "${stateRef.current.title || ''}":\n\n${storyText}\n\n${charList ? `Story ke characters: ${charList}\n\n` : ''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated character names jo is scene mein hain, story ke context se decide karo]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Start with: "Use these reference images: [char names present in scene]". Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format.` }],
+        })
+      });
+      const data   = await res.json();
+      const raw    = data.choices?.[0]?.message?.content || '';
+      const parsed = parseScenes(raw);
+      if (parsed.length) {
+        setScenes(parsed);
+        stateRef.current.savedScenes = parsed;
+        saveEpisode(playerChunks, playerEnded);
+        toast(`✅ ${parsed.length} scenes ready!`);
+      }
+    } catch(e) { toast('❌ Scenes: ' + e.message); }
     setScenesLoading(false);
   }
 
   function parseScenes(raw) {
-    return raw.split('SCENE_START').slice(1).map(b=>{
-      const blk=b.slice(0,b.indexOf('SCENE_END')>-1?b.indexOf('SCENE_END'):undefined);
-      const g=(k)=>{const m=blk.match(new RegExp(k+':\\s*(.+)'));return m?m[1].trim():'';};
-      return {num:g('num'),title:g('title'),location:g('location'),mood:g('mood'),what:g('what'),imgprompt:g('imgprompt')};
-    }).filter(s=>s.title);
+    return raw.split('SCENE_START').slice(1).map(b => {
+      const blk = b.slice(0, b.indexOf('SCENE_END') > -1 ? b.indexOf('SCENE_END') : undefined);
+      const g   = (k) => { const m = blk.match(new RegExp(k + ':\\s*(.+)')); return m ? m[1].trim() : ''; };
+      return {
+        num:            g('num'),
+        title:          g('title'),
+        location:       g('location'),
+        mood:           g('mood'),
+        what:           g('what'),
+        chars_in_scene: g('chars_in_scene'),
+        imgprompt:      g('imgprompt'),
+      };
+    }).filter(s => s.title);
   }
 
   // ── Characters with reference image system ─────────
@@ -610,25 +623,81 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                         {scenesLoading?<><div className="spinner"/>Scenes ban rahe hain...</>:'🎬 Scene Breakdown Generate Karo'}
                       </button>
                     </div>
-                    {scenes?.map((s,i)=>{
-                      const fullPrompt=buildScenePrompt(s,chars);
-                      return(
+                    {scenes?.map((s, i) => {
+                      const sceneChars = s.chars_in_scene
+                        ? s.chars_in_scene.split(',').map(n => n.trim()).filter(Boolean)
+                        : [];
+
+                      const charPrompts = sceneChars.map(name => {
+                        const found = (chars || []).find(c => c.name?.toLowerCase() === name.toLowerCase());
+                        const desc  = found?.desc || '';
+                        return `full body character sheet, front side view, ${name}${desc ? ', ' + desc : ''}, webtoon 2D style, flat illustration, clean lineart, white background, multiple expressions, multiple poses`;
+                      });
+
+                      const imagePrompt = s.imgprompt || '';
+
+                      const videoPrompt = `Convert this illustration to a short animated video clip (3-5 seconds). Subtle motion only — eyes blinking, cloth movement, hair sway, atmospheric fog. Maintain the exact webtoon 2D flat illustration style. No camera movement. Dark horror atmosphere. Keep all character appearances identical to the reference image.${sceneChars.length ? ` Characters present: ${sceneChars.join(', ')}.` : ''}`;
+
+                      return (
                         <div key={i} className="scene-card">
                           <div className="scene-num">🎬 Scene {s.num} <span style={{color:'#444',fontSize:9}}>{(s.mood||'').toUpperCase()}</span></div>
                           <div className="scene-title">{s.title}</div>
                           <div className="scene-meta"><span className="scene-tag">📍 {s.location}</span></div>
                           <div className="scene-desc">{s.what}</div>
-                          {fullPrompt&&(
-                            <div style={{marginTop:8}}>
-                              <div style={{fontSize:11,color:'#bb66ff',marginBottom:4}}>
-                                🖼 Prompt {chars?.length>0?`(with ${chars.filter(c=>fullPrompt.includes(c.name)||s.what?.includes(c.name)).length||1} ref)`:''}: 
-                              </div>
-                              <div style={{fontSize:11,color:'#888',lineHeight:1.6,marginBottom:6}}>{fullPrompt.slice(0,120)}...</div>
-                              <button onClick={()=>copyText(fullPrompt)} style={{background:'#0a0000',border:'1px solid #440000',color:'#cc4444',borderRadius:8,fontSize:12,padding:'7px',cursor:'pointer',width:'100%'}}>
-                                📋 Full Image Prompt Copy
-                              </button>
+
+                          {sceneChars.length > 0 && (
+                            <div style={{display:'flex',flexWrap:'wrap',gap:6,margin:'8px 0 4px'}}>
+                              {sceneChars.map((name, ci) => (
+                                <span key={ci} style={{
+                                  fontSize:10, padding:'3px 8px',
+                                  background:'#1a0000', border:'1px solid #440000',
+                                  borderRadius:20, color:'#cc4444', letterSpacing:0.5
+                                }}>👤 {name}</span>
+                              ))}
                             </div>
                           )}
+
+                          <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:10}}>
+
+                            {sceneChars.length > 0 && charPrompts.map((cp, ci) => (
+                              <button key={ci}
+                                onClick={() => copyText(cp) && toast(`✅ ${sceneChars[ci]} character prompt copy ho gaya!`)}
+                                onClickCapture={() => navigator.clipboard.writeText(cp).then(() => toast(`✅ ${sceneChars[ci]} character prompt copy ho gaya!`))}
+                                style={{
+                                  background:'#0a000a', border:'1px solid #440044',
+                                  color:'#cc66cc', borderRadius:8, fontSize:12,
+                                  padding:'8px 10px', cursor:'pointer', width:'100%',
+                                  textAlign:'left'
+                                }}>
+                                👤 Copy: {sceneChars[ci]} Character Prompt
+                              </button>
+                            ))}
+
+                            {imagePrompt && (
+                              <button
+                                onClick={() => navigator.clipboard.writeText(imagePrompt).then(() => toast('✅ Image prompt copy ho gaya!'))}
+                                style={{
+                                  background:'#0a0000', border:'1px solid #440000',
+                                  color:'#cc4444', borderRadius:8, fontSize:12,
+                                  padding:'8px 10px', cursor:'pointer', width:'100%',
+                                  textAlign:'left'
+                                }}>
+                                🖼 Copy: Scene Image Prompt
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => navigator.clipboard.writeText(videoPrompt).then(() => toast('✅ Video prompt copy ho gaya!'))}
+                              style={{
+                                background:'#000a0a', border:'1px solid #004444',
+                                color:'#44aaaa', borderRadius:8, fontSize:12,
+                                padding:'8px 10px', cursor:'pointer', width:'100%',
+                                textAlign:'left'
+                              }}>
+                              🎬 Copy: Image → Video Prompt
+                            </button>
+
+                          </div>
                         </div>
                       );
                     })}
