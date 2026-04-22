@@ -850,7 +850,7 @@ function MyStoriesPage({ user }) {
 
                                 {/* Download */}
                                 <button
-                                  onClick={()=>window.open(`https://www.google.com/search?q=youtube+video+downloader`,'_blank')}
+                                  onClick={()=>window.open(`https://www.google.com/search?q=youtube+music+downloader`,'_blank')}
                                   style={{flex:1,background:'linear-gradient(135deg,#003300,#001a00)',
                                     border:'1px solid #004400',color:'#44bb66',borderRadius:8,
                                     fontSize:12,padding:'9px 8px',cursor:'pointer',fontWeight:600}}>
