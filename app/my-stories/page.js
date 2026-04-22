@@ -255,7 +255,19 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
       setPlayerChunks(final); setPlayerEnded(true); setShowEndBanner(true);
       await saveEpisode(final,true);
       toast('✅ Episode save ho gaya!');
-      setTimeout(()=>{generateScenesAuto(final);generateCharsAuto(final);},1200);
+      // Generate subtitle for this episode
+      setTimeout(async ()=>{
+        const newTitle = await generateSubtitle(activeEp, final);
+        if (newTitle && activeEp) {
+          const { db_saveEpisode } = await import('../../lib/firebase');
+          await db_saveEpisode(user.uid, { ...activeEp, storyChunks: final, ended: true, title: newTitle, savedAt: Date.now(), savedScenes: stateRef.current.savedScenes||null, savedChars: stateRef.current.savedChars||null });
+          stateRef.current.title = newTitle;
+          setActiveEp(prev => prev ? { ...prev, title: newTitle } : prev);
+          await loadEpisodes();
+        }
+        generateScenesAuto(final);
+        generateCharsAuto(final);
+      }, 500);
     }catch(e){toast('❌ '+e.message);}
     isGenRef.current=false; setIsGenerating(false); scrollBottom();
   }
@@ -337,12 +349,21 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     const nextNum  = 'EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
     const bible    = (stateRef.current.seasonBible||'')+'\n\n['+(activeEp?.season||'SEASON 1')+' '+(activeEp?.epNum||'EP 01')+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
     const newEpId  = Date.now().toString();
-    const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
-    stateRef.current = { ...stateRef.current, epNum:nextNum, currentEpId:newEpId, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null, seasonBible:bible };
+    const baseTitle= (activeEp?.title||'').split(' | ')[0].trim()||activeEp?.title||'Untitled';
+    const season   = activeEp?.season||'SEASON 1';
+    const seasonFmt= season.replace('SEASON ','').padStart(2,'0');
+    const epFmt    = nextNum.replace('EP ','').padStart(2,'0');
+    const placeholderTitle = `${baseTitle} | ... | SEASON ${seasonFmt} EP ${epFmt}`;
+    const newEp    = { ...activeEp, epNum:nextNum, id:newEpId, title:placeholderTitle, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
+    stateRef.current = { ...stateRef.current, epNum:nextNum, currentEpId:newEpId, title:placeholderTitle, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null, seasonBible:bible };
+    // Save stub episode to Firebase so it shows in list immediately
+    const { db_saveEpisode } = await import('../../lib/firebase');
+    await db_saveEpisode(user.uid, { ...newEp, savedAt: Date.now() });
     setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
-    toast('▶ '+nextNum+' shuru ho raha hai...');
     await loadEpisodes();
+    setScreen('player');
+    toast('▶ '+nextNum+' shuru ho raha hai...');
   }
 
   async function endSeason() {
@@ -364,12 +385,19 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
     const sMatch   = (activeEp?.season||'SEASON 1').match(/(\d+)/);
     const nextSzn  = 'SEASON '+((sMatch?parseInt(sMatch[1]):1)+1);
     const newEpId  = Date.now().toString();
-    const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
-    stateRef.current = { ...stateRef.current, season:nextSzn, epNum:'EP 01', currentEpId:newEpId, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null };
+    const baseTitle= (activeEp?.title||'').split(' | ')[0].trim()||activeEp?.title||'Untitled';
+    const seasonFmt= String((sMatch?parseInt(sMatch[1]):1)+1).padStart(2,'0');
+    const placeholderTitle = `${baseTitle} | ... | SEASON ${seasonFmt} EP 01`;
+    const newEp    = { ...activeEp, season:nextSzn, epNum:'EP 01', id:newEpId, title:placeholderTitle, storyChunks:[], ended:false, savedScenes:null, savedChars:null, seasonEnded:false };
+    stateRef.current = { ...stateRef.current, season:nextSzn, epNum:'EP 01', currentEpId:newEpId, title:placeholderTitle, storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null };
+    // Save stub to Firebase immediately so episode shows in list
+    const { db_saveEpisode } = await import('../../lib/firebase');
+    await db_saveEpisode(user.uid, { ...newEp, savedAt: Date.now() });
     setActiveEp(newEp); setPlayerChunks([]); setPlayerEnded(false); setShowEndBanner(false);
     setWordCount(0); setScenes(null); setChars(null); setNarration(''); setShowNarration(false);
-    toast('🏁 '+nextSzn+' shuru ho raha hai!');
     await loadEpisodes();
+    setScreen('player');
+    toast('🏁 '+nextSzn+' shuru ho raha hai!');
   }
 
   async function generateFullNarration(forceRegen=false) {
@@ -391,6 +419,30 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
       if (nar) { setNarration(nar); stateRef.current.savedNarration=nar; }
     } catch(err) { toast('❌ '+err.message); }
     setNarrationLoading(false);
+  }
+
+  // ── Generate episode subtitle ────────────────────
+  async function generateSubtitle(ep, chunks) {
+    try {
+      const storySnippet = (chunks||[]).map(c=>c.text).join(' ').slice(0,400);
+      const baseTitle = (ep.title||'').split(' | ')[0].trim();
+      const season = ep.season||'SEASON 1';
+      const epNum  = ep.epNum||'EP 01';
+      // Format: SEASON 01 EP 01
+      const seasonFmt = season.replace('SEASON ','').padStart(2,'0');
+      const epFmt = epNum.replace('EP ','').padStart(2,'0');
+      const seasonEpStr = `SEASON ${seasonFmt} EP ${epFmt}`;
+      const res = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:80, temperature:0.9,
+          messages:[{ role:'user', content:`Story title: "${baseTitle}"\nStory snippet: "${storySnippet}"\n\nEk viral Hindi YouTube horror subtitle banao jo curiosity aur fear create kare.\nFormat: "क्या [kuch interesting]?" ya "[kuch dramatic]!" — 6-10 Hindi words only.\nSirf subtitle text do, koi extra text nahi.` }],
+        }),
+      });
+      const data = await res.json();
+      const subtitle = data.choices?.[0]?.message?.content?.trim()||'';
+      if (!subtitle) return null;
+      // Full title: baseTitle | subtitle | SEASON X EP Y
+      return `${baseTitle} | ${subtitle} | ${seasonEpStr}`;
+    } catch { return null; }
   }
 
   function scrollBottom(){setTimeout(()=>{if(storyAreaRef.current)storyAreaRef.current.scrollTop=storyAreaRef.current.scrollHeight;},50);}
@@ -597,7 +649,17 @@ ${bible?`\nPREVIOUS SEASON:\n${bible}`:''}`;
                           {ep.ended?(seasonDone?'🔒 Locked':'Done'):'Ongoing'}
                         </span>
                       </div>
-                      <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{epYtTitle}</div>
+                      {(() => {
+                        const parts = (ep.title||'').split(' | ');
+                        const mainT = parts[0]||'Untitled';
+                        const subT  = parts[1]&&parts[1]!=='...'?parts[1]:null;
+                        return (
+                          <>
+                            <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>
+                            {subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>{subT}</div>}
+                          </>
+                        );
+                      })()}
                       <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
                         <span style={{fontSize:10,color:'#444'}}>{ep.wordCount||0} words</span>
                         {savedDate&&<span style={{fontSize:10,color:'#333'}}>· {savedDate}</span>}
