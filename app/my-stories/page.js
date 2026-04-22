@@ -276,7 +276,7 @@ function MyStoriesPage({ user }) {
     const curChars=stateRef.current.savedChars||chars||[];
     const charList=curChars.length?curChars.map(c=>`${c.name} (${c.role})`).join(', '):'';
     try{
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}\n\n${charList?`IMPORTANT — Story ke SAARE characters (inhe miss mat karna):\n${charList}\n\nHar scene mein chars_in_scene field mein SIRF inhi characters ke naam use karo, exact spelling same rakho.\n\n`:''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated — sirf wahi characters jo is scene mein physically present hain, exact naam use karo]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format. Koi extra text nahi.`}]})});
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}\n\n${charList?`Story ke characters: ${charList}\n\n`:''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated character names jo is scene mein hain]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format.`}]})});
       const data=await res.json();
       const parsed=parseScenes(data.choices?.[0]?.message?.content||'');
       if(parsed.length){setScenes(parsed);stateRef.current.savedScenes=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} scenes ready!`);}
@@ -308,7 +308,7 @@ function MyStoriesPage({ user }) {
   async function fetchMusicAuto() {
     setBgMusicLoading(true); setBgMusic([]); setSelectedMusic(null);
     try {
-      const res  = await fetch('/api/music?q=horror+background+music+no+copyright+free+use');
+      const res  = await fetch('/api/music?q=horror+dark+suspense+ambient');
       const data = await res.json();
       if (data.hits?.length) {
         setBgMusic(data.hits);
@@ -423,11 +423,7 @@ function MyStoriesPage({ user }) {
 
   const storyList  = Object.entries(groups);
   const seasonMap  = screen!=='stories'?getSeasonsForStory(curStory):{};
-  const seasonList = Object.entries(seasonMap).sort((a, b) => {
-    const na = parseInt((a[0].match(/\d+/)||[0])[0])||0;
-    const nb = parseInt((b[0].match(/\d+/)||[0])[0])||0;
-    return nb - na; // Season 3, 2, 1 — latest upar
-  });
+  const seasonList = Object.entries(seasonMap);
   const breadcrumb = [
     {label:'My Stories',sc:'stories'},
     ...(screen!=='stories'?[{label:curStory.length>14?curStory.slice(0,12)+'…':curStory,sc:'seasons'}]:[]),
@@ -696,6 +692,8 @@ function MyStoriesPage({ user }) {
                         {chars?.map((c,i)=>(
                           <div key={i} className="char-card">
                             <div className="char-name"><span style={{fontSize:12,color:'#666',marginRight:4}}>#{i+1}</span>{c.name}<span className="char-role-badge">{c.role}</span></div>
+                            <div className="char-desc">{c.desc}</div>
+                            {c.appear&&<div className="char-appear">📍 {c.appear}</div>}
                           </div>
                         ))}
                       </>
@@ -726,20 +724,27 @@ function MyStoriesPage({ user }) {
                         {bgMusic.length>0&&(
                           <div style={{display:'flex',flexDirection:'column',gap:8}}>
                             {bgMusic.map((track,ti)=>(
-                              <a key={ti} href={track.youtubeUrl} target="_blank" rel="noreferrer"
-                                style={{display:'flex',alignItems:'center',gap:10,background:'#0a0005',border:'1px solid #220011',borderRadius:10,padding:'10px 12px',textDecoration:'none',cursor:'pointer'}}
-                                onMouseEnter={e=>e.currentTarget.style.borderColor='#880022'}
-                                onMouseLeave={e=>e.currentTarget.style.borderColor='#220011'}>
-                                {track.thumbnail
-                                  ?<img src={track.thumbnail} alt="" style={{width:48,height:36,borderRadius:6,objectFit:'cover',flexShrink:0,border:'1px solid #330011'}}/>
-                                  :<span style={{fontSize:22,flexShrink:0}}>🎵</span>
-                                }
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{fontSize:12,fontWeight:600,color:'#ddd',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{track.title}</div>
-                                  <div style={{fontSize:10,color:'#555',marginTop:3}}>{track.channel} · YouTube</div>
+                              <div key={ti}
+                                style={{background:selectedMusic?.id===track.id?'rgba(136,0,34,0.15)':'#0a0005',border:`1px solid ${selectedMusic?.id===track.id?'#880022':'#220011'}`,borderRadius:10,padding:'10px 12px',cursor:'pointer'}}
+                                onClick={()=>setSelectedMusic(prev=>prev?.id===track.id?null:track)}>
+                                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                  <span style={{fontSize:16,flexShrink:0}}>{selectedMusic?.id===track.id?'🎵':'🎼'}</span>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{track.tags?.split(',').slice(0,3).join(', ')||'Track '+(ti+1)}</div>
+                                    <div style={{fontSize:10,color:'#555',marginTop:2}}>{track.duration}s · Free · No Copyright</div>
+                                  </div>
+                                  <a href={track.audio} download target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}
+                                    style={{background:'linear-gradient(135deg,#003300,#001a00)',border:'1px solid #004400',color:'#44bb66',borderRadius:6,padding:'6px 10px',fontSize:11,textDecoration:'none',fontWeight:700,flexShrink:0}}>⬇ DL</a>
                                 </div>
-                                <span style={{fontSize:18,color:'#ff4444',flexShrink:0}}>▶</span>
-                              </a>
+                                {selectedMusic?.id===track.id&&(
+                                  <div style={{marginTop:8}}>
+                                    <audio controls src={track.audio} style={{width:'100%',height:32,marginBottom:6}}/>
+                                    <a href={track.audio} download target="_blank" rel="noreferrer"
+                                      style={{display:'block',background:'linear-gradient(135deg,#004400,#002200)',border:'1px solid #006600',color:'#44ee66',borderRadius:8,padding:'8px',fontSize:12,textAlign:'center',textDecoration:'none',fontWeight:700}}>⬇ Full Download Karo</a>
+                                    <div style={{fontSize:10,color:'#444',marginTop:4,textAlign:'center'}}>Pixabay Music — Free commercial use · No attribution required</div>
+                                  </div>
+                                )}
+                              </div>
                             ))}
                           </div>
                         )}
