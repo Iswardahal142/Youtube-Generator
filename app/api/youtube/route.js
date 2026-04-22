@@ -20,7 +20,6 @@ export async function GET() {
 
     const uploadsPlaylistId = channelData.items[0].contentDetails.relatedPlaylists.uploads;
     const channelName       = channelData.items[0].snippet?.title || '';
-    const channelThumbnail = channelData.items[0].snippet?.thumbnails?.default?.url || '';
 
     // Step 2: Last 20 videos
     const playlistRes  = await fetch(
@@ -49,7 +48,7 @@ export async function GET() {
       likeCount:   parseInt(v.statistics.likeCount  || '0'),
     }));
 
-    return Response.json({ channelName, channelThumbnail, videos, lastVideo: videos[0] || null });
+    return Response.json({ channelName, videos, lastVideo: videos[0] || null });
 
   } catch (err) {
     return Response.json({ error: err.message || 'YouTube API call failed' }, { status: 500 });
