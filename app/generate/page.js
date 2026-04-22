@@ -18,8 +18,6 @@ function GeneratePage({ user }) {
   const [titlePreview, setTitlePreview]   = useState('');
   const [showStart, setShowStart]         = useState(false);
   const [showWarning, setShowWarning]     = useState(false);
-  const [channelName, setChannelName]     = useState('');
-  const [channelThumbnail, setChannelThumbnail] = useState('');
 
   // Story writer state
   const [screen, setScreen]             = useState('setup'); // setup | story | analysis | thumb
@@ -54,11 +52,9 @@ function GeneratePage({ user }) {
     { key: 'psychological', label: '🧠 Psycho' },
   ];
 
-  // ── Load state from Firebase + fetch channel name ─
+  // ── Load state from Firebase on mount ────────────
   useEffect(() => {
     if (!user?.uid) return;
-
-    // Firebase state load
     import('../../lib/firebase').then(async ({ db_loadState }) => {
       const d = await db_loadState(user.uid);
       if (d) {
@@ -74,21 +70,6 @@ function GeneratePage({ user }) {
         stateRef.current = d;
       }
     });
-
-    // ── Channel name directly YouTube API se fetch ──
-    fetch('/api/youtube')
-  .then(r => r.json())
-  .then(data => {
-    if (data.channelName) {
-      setChannelName(data.channelName);
-      stateRef.current = { ...stateRef.current, channel: data.channelName };
-    }
-    if (data.channelThumbnail) {
-      setChannelThumbnail(data.channelThumbnail);
-    }
-  })
-  .catch(() => {});
-
   }, [user?.uid]);
 
   function saveState(updates) {
@@ -102,21 +83,12 @@ function GeneratePage({ user }) {
   // ── Generate Story Idea ───────────────────────────
   async function generateAiStoryIdea() {
     setGenState('checking');
-
+    // Upload check
     try {
-      // Sirf tab check karo jab koi current story nahi chal rahi
-      if (!stateRef.current.storyChunks?.length) {
-        const { db_getEpisodes } = await import('../../lib/firebase');
-        const eps = await db_getEpisodes(user.uid);
-
-        // Koi episode hai jo ended hai but ytUploaded explicitly false hai
-        const hasUnuploaded = eps?.some(ep => ep.ended && ep.ytUploaded === false);
-
-        if (hasUnuploaded) {
-          setShowWarning(true);
-          setGenState('idle');
-          return;
-        }
+      const eps = stateRef.current.storyChunks?.length
+        ? [] : await (await import('../../lib/firebase')).db_getEpisodes(user.uid);
+      if (eps?.length) {
+        // Skip complex YT check for now — allow
       }
     } catch {}
 
@@ -423,21 +395,12 @@ ${seasonBible ? `\n\nPREVIOUS SEASON CONTINUITY:\n${seasonBible}` : ''}`;
 
               {/* Channel pill */}
               <div className="sg-channel-pill">
-  <div className="sg-channel-pill-left" style={{ display:'flex', alignItems:'center', gap:8 }}>
-    {channelThumbnail
-      ? <img src={channelThumbnail} style={{ width:28, height:28, borderRadius:'50%', objectFit:'cover' }} />
-      : <span style={{ width:28, height:28, borderRadius:'50%', background:'#220000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>📺</span>
-    }
-    {/* YouTube logo */}
-    <svg width="18" height="13" viewBox="0 0 18 13" fill="none">
-      <path d="M17.6 2.0C17.4 1.3 16.8 0.7 16.1 0.5C14.7 0 9 0 9 0C9 0 3.3 0 1.9 0.5C1.2 0.7 0.6 1.3 0.4 2.0C0 3.4 0 6.5 0 6.5C0 6.5 0 9.6 0.4 11.0C0.6 11.7 1.2 12.3 1.9 12.5C3.3 13 9 13 9 13C9 13 14.7 13 16.1 12.5C16.8 12.3 17.4 11.7 17.6 11.0C18 9.6 18 6.5 18 6.5C18 6.5 18 3.4 17.6 2.0Z" fill="#FF0000"/>
-      <path d="M7 9.5L12 6.5L7 3.5V9.5Z" fill="white"/>
-    </svg>
-  </div>
-  <span style={{ fontSize:12, color:'#ccc', fontWeight:600 }}>
-    {channelName || 'Fetching...'}
-  </span>
-</div>
+                <div className="sg-channel-pill-left">
+                  <span className="sg-live-dot" />
+                  <span className="sg-channel-meta">CHANNEL</span>
+                </div>
+                <span style={{ fontSize: 12, color: '#aaa' }}>{stateRef.current.channel || 'Not set'}</span>
+              </div>
 
               {/* Studio card */}
               <div className="sg-studio-card">
