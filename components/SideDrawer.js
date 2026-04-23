@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, signOut } from '../lib/firebase';
 
-// ── Firestore mein user settings save/load ──
-async function loadProviderSetting(uid) {
+// ── Global helpers ──
+async function loadProviderFromFirestore(uid) {
   try {
     const { db } = await import('../lib/firebase');
     const { doc, getDoc } = await import('firebase/firestore');
@@ -14,7 +14,7 @@ async function loadProviderSetting(uid) {
   } catch { return 'openrouter'; }
 }
 
-async function saveProviderSetting(uid, provider) {
+async function saveProviderToFirestore(uid, provider) {
   try {
     const { db } = await import('../lib/firebase');
     const { doc, setDoc } = await import('firebase/firestore');
@@ -22,17 +22,33 @@ async function saveProviderSetting(uid, provider) {
   } catch {}
 }
 
+// ── Global provider getter — route.js ke liye ──
+// Yeh function globally available hai — fetch calls isme se provider lete hain
+export function getActiveProvider() {
+  if (typeof window !== 'undefined') {
+    return window.__aiProvider || 'openrouter';
+  }
+  return 'openrouter';
+}
+
 export default function SideDrawer({ open, onClose, user }) {
   const router = useRouter();
-  const [apiProvider, setApiProvider] = useState('openrouter');
+  const [apiProvider, setApiProvider] = useState(() => {
+    // Initial value — window se lo agar already set hai
+    if (typeof window !== 'undefined' && window.__aiProvider) {
+      return window.__aiProvider;
+    }
+    return 'openrouter';
+  });
   const [providerLoading, setProviderLoading] = useState(false);
+  const [providerSaved, setProviderSaved] = useState(false);
 
-  // Firestore se load karo
+  // ── App load pe Firestore se provider fetch karo ──
   useEffect(() => {
     if (!user?.uid) return;
-    loadProviderSetting(user.uid).then(p => {
+    loadProviderFromFirestore(user.uid).then(p => {
       setApiProvider(p);
-      // window pe bhi set karo taaki fetch calls use kar sakein
+      // Window pe set karo — saari fetch calls yahan se padhengi
       if (typeof window !== 'undefined') window.__aiProvider = p;
     });
   }, [user?.uid]);
@@ -40,10 +56,15 @@ export default function SideDrawer({ open, onClose, user }) {
   async function toggleProvider(val) {
     if (val === apiProvider || providerLoading) return;
     setProviderLoading(true);
+    setProviderSaved(false);
+    // Turant update karo — window aur state dono
     setApiProvider(val);
     if (typeof window !== 'undefined') window.__aiProvider = val;
-    await saveProviderSetting(user?.uid, val);
+    // Firestore mein save karo
+    await saveProviderToFirestore(user?.uid, val);
     setProviderLoading(false);
+    setProviderSaved(true);
+    setTimeout(() => setProviderSaved(false), 2000);
   }
 
   // Close on ESC
@@ -53,7 +74,7 @@ export default function SideDrawer({ open, onClose, user }) {
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Swipe-to-open (left edge drag)
+  // Swipe-to-open
   useEffect(() => {
     let startX = 0, startY = 0;
     const onStart = (e) => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; };
@@ -83,14 +104,14 @@ export default function SideDrawer({ open, onClose, user }) {
   const colors      = ['#8800aa','#c0392b','#1a6b8a','#27ae60','#d35400','#8e44ad'];
   const avatarColor = colors[initial.charCodeAt(0) % colors.length];
 
+  const isGemini = apiProvider === 'gemini';
+
   return (
     <>
-      {/* Overlay */}
       {open && (
         <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:1100, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(2px)' }} />
       )}
 
-      {/* Drawer */}
       <div style={{
         position:'fixed', top:0, left:0, bottom:0, width:270, zIndex:1200,
         background:'#0d000d', borderRight:'1px solid #2a0022',
@@ -135,57 +156,45 @@ export default function SideDrawer({ open, onClose, user }) {
           ))}
 
           {/* ── AI Provider Toggle ── */}
-          <div style={{ margin:'10px 6px 0', background:'#0a000a', border:'1px solid #1a0018', borderRadius:12, padding:'12px 12px' }}>
-            <div style={{ fontSize:10, color:'#660033', letterSpacing:1.5, textTransform:'uppercase', fontWeight:700, marginBottom:10 }}>
-              ⚡ AI Provider {providerLoading && <span style={{color:'#444',fontWeight:400}}>saving...</span>}
+          <div style={{ margin:'10px 6px 0', background:'#080008', border:`1px solid ${isGemini?'#004433':'#2a0018'}`, borderRadius:12, padding:'12px 12px', transition:'border-color 0.3s' }}>
+
+            {/* Header row */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+              <div style={{ fontSize:10, color:'#550033', letterSpacing:1.5, textTransform:'uppercase', fontWeight:700 }}>⚡ AI Provider</div>
+              {providerLoading && <div style={{ fontSize:9, color:'#444' }}>saving...</div>}
+              {providerSaved && <div style={{ fontSize:9, color:'#00aa66' }}>✓ saved!</div>}
             </div>
 
-            {/* OpenRouter option */}
-            <div onClick={() => toggleProvider('openrouter')} style={{
-              display:'flex', alignItems:'center', gap:10, padding:'10px 10px',
-              borderRadius:9, marginBottom:7, cursor:'pointer',
-              background: apiProvider==='openrouter' ? 'rgba(150,0,40,0.15)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${apiProvider==='openrouter' ? '#770022' : '#1a0012'}`,
-              transition:'all 0.18s',
-            }}>
-              <div style={{
-                width:16, height:16, borderRadius:'50%', flexShrink:0,
-                background: apiProvider==='openrouter' ? '#cc2244' : 'transparent',
-                border: `2px solid ${apiProvider==='openrouter' ? '#cc2244' : '#333'}`,
-                boxShadow: apiProvider==='openrouter' ? '0 0 6px rgba(200,30,60,0.5)' : 'none',
-                transition:'all 0.18s',
-              }}/>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, fontWeight:700, color: apiProvider==='openrouter' ? '#eee' : '#555' }}>OpenRouter</div>
-                <div style={{ fontSize:10, color:'#444', marginTop:1 }}>GPT-4o-mini · Paid credits</div>
+            {/* Toggle pill */}
+            <div style={{ display:'flex', background:'#0d000d', borderRadius:8, padding:3, border:'1px solid #1a0012', marginBottom:10 }}>
+              <div onClick={() => toggleProvider('openrouter')} style={{
+                flex:1, textAlign:'center', padding:'8px 4px', borderRadius:6, cursor:'pointer',
+                background: !isGemini ? 'linear-gradient(135deg,#440011,#220008)' : 'transparent',
+                border: !isGemini ? '1px solid #880022' : '1px solid transparent',
+                transition:'all 0.2s',
+              }}>
+                <div style={{ fontSize:11, fontWeight:700, color: !isGemini ? '#ee3355' : '#444' }}>OpenRouter</div>
+                <div style={{ fontSize:9, color: !isGemini ? '#882233' : '#333', marginTop:2 }}>Paid</div>
               </div>
-              {apiProvider==='openrouter' && <span style={{fontSize:9,color:'#cc2244',fontWeight:800}}>ACTIVE</span>}
-            </div>
-
-            {/* Gemini option */}
-            <div onClick={() => toggleProvider('gemini')} style={{
-              display:'flex', alignItems:'center', gap:10, padding:'10px 10px',
-              borderRadius:9, cursor:'pointer',
-              background: apiProvider==='gemini' ? 'rgba(0,120,80,0.15)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${apiProvider==='gemini' ? '#006644' : '#1a0012'}`,
-              transition:'all 0.18s',
-            }}>
-              <div style={{
-                width:16, height:16, borderRadius:'50%', flexShrink:0,
-                background: apiProvider==='gemini' ? '#00bb88' : 'transparent',
-                border: `2px solid ${apiProvider==='gemini' ? '#00bb88' : '#333'}`,
-                boxShadow: apiProvider==='gemini' ? '0 0 6px rgba(0,180,120,0.5)' : 'none',
-                transition:'all 0.18s',
-              }}/>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, fontWeight:700, color: apiProvider==='gemini' ? '#eee' : '#555' }}>Google Gemini</div>
-                <div style={{ fontSize:10, color:'#444', marginTop:1 }}>gemini-2.0-flash · Free ✨</div>
+              <div onClick={() => toggleProvider('gemini')} style={{
+                flex:1, textAlign:'center', padding:'8px 4px', borderRadius:6, cursor:'pointer',
+                background: isGemini ? 'linear-gradient(135deg,#003322,#001a11)' : 'transparent',
+                border: isGemini ? '1px solid #006644' : '1px solid transparent',
+                transition:'all 0.2s',
+              }}>
+                <div style={{ fontSize:11, fontWeight:700, color: isGemini ? '#00cc88' : '#444' }}>Gemini</div>
+                <div style={{ fontSize:9, color: isGemini ? '#005533' : '#333', marginTop:2 }}>Free ✨</div>
               </div>
-              {apiProvider==='gemini' && <span style={{fontSize:9,color:'#00bb88',fontWeight:800}}>ACTIVE</span>}
             </div>
 
-            <div style={{ fontSize:9, color: apiProvider==='gemini' ? '#005533' : '#330011', marginTop:8, textAlign:'center', padding:'4px 0' }}>
-              {apiProvider==='gemini' ? '✅ Free Gemini use ho raha hai' : '⚠️ Credits khatam toh Gemini switch karo'}
+            {/* Status line */}
+            <div style={{
+              fontSize:10, textAlign:'center', padding:'6px 8px', borderRadius:6,
+              background: isGemini ? 'rgba(0,100,60,0.15)' : 'rgba(100,0,20,0.15)',
+              color: isGemini ? '#00aa66' : '#aa2233',
+              border: `1px solid ${isGemini ? '#003322' : '#330011'}`,
+            }}>
+              {isGemini ? '✅ Google Gemini active — free hai!' : '⚠️ OpenRouter active — credits chahiye'}
             </div>
           </div>
         </nav>
