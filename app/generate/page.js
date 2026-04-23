@@ -151,7 +151,7 @@ function GeneratePage({ user }) {
       }
     } catch {}
 
-    // ── Random variety seed — har baar alag story type ──
+   // ── Random variety seed — har baar alag story type ──
     const varietySeeds = [
       'Ek purani haveli mein ek akela insaan, jahan deewarein kuch kehti hain',
       'Ek jungle mein khoye hue log, raat ko kuch unka peecha karta hai',
@@ -178,9 +178,13 @@ function GeneratePage({ user }) {
           }],
         }),
       });
-      const data   = await res.json();
-      const raw    = data.choices?.[0]?.message?.content||'';
-      const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+      const data = await res.json();
+      const raw  = data.choices?.[0]?.message?.content||'';
+      let parsed = {};
+      try {
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+      } catch { parsed = {}; }
       generatedRef.current = { title:parsed.title||'', prompt:parsed.plot||'' };
       if (parsed.title && parsed.plot) {
         setTitlePreview(parsed.title); setShowStart(true); setGenState('done');
