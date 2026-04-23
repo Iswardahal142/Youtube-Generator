@@ -177,18 +177,20 @@ function GeneratePage({ user }) {
             content:`You are a Hindi horror story title generator.\n\nGenre/Setting: ${genreHint}${topVideoHint}${existingTitles}\n\nINSPIRATION SEED (isse seedha copy mat karo, sirf direction le): "${randomSeed}"\n\nSTRICT RULES:\n- Title MUST be in Hindi Devanagari script only.\n- Title must be 3-6 Hindi words. NO English words.\n- Plot: 3-4 sentences in Hindi Devanagari.\n- Har baar NAYA aur ALAG angle lo — clichéd setups avoid karo.\n- Protagonist alag ho, villain/threat alag ho, setting fresh ho.\n\nRespond ONLY in JSON:\n{"title":"हिंदी शीर्षक","plot":"हिंदी में कहानी का विचार"}`
           }],
         }),
-      });
-      const data = await res.json();
-      const raw  = data.choices?.[0]?.message?.content||'';
-      let parsed = {};
-      try {
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-      } catch { parsed = {}; }
-      generatedRef.current = { title:parsed.title||'', prompt:parsed.plot||'' };
-      if (parsed.title && parsed.plot) {
-        setTitlePreview(parsed.title); setShowStart(true); setGenState('done');
-      } else { toast('⚠️ Dobara try karo'); setGenState('idle'); }
+      });const data = await res.json();
+const raw  = data.choices?.[0]?.message?.content||'';
+let parsed = {};
+try {
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+} catch { parsed = {}; }
+// Fallback — agar plot nahi toh content se nikalo
+if (!parsed.title) parsed.title = raw.match(/"title"\s*:\s*"([^"]+)"/)?.[1] || '';
+if (!parsed.plot)  parsed.plot  = raw.match(/"plot"\s*:\s*"([^"]+)"/)?.[1] || '';
+generatedRef.current = { title:parsed.title||'', prompt:parsed.plot||'' };
+if (parsed.title && parsed.plot) {
+  setTitlePreview(parsed.title); setShowStart(true); setGenState('done');
+} else { toast('⚠️ Dobara try karo'); setGenState('idle'); }
     } catch(err) { toast('❌ '+err.message); setGenState('idle'); }
   }
 
