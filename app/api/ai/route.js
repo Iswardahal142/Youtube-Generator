@@ -1,125 +1,82 @@
 export async function POST(request) {
   try {
     const body = await request.json();
-    const provider = body.provider || 'openrouter'; // SideDrawer se aata hai, default openrouter
-
-    if (provider === 'gemini') {
-      return handleGemini(body);
-    } else {
-      return handleOpenRouter(body);
-    }
+    return handleOpenRouter(body);
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
 
-// ── OpenRouter — tera purana code as-is ──
 async function handleOpenRouter(body) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: 'API key not configured on server' }, { status: 500 });
+  // Saari keys collect karo env se
+  const keys = [
+    process.env.OPENROUTER_API_KEY,
+    process.env.OPENROUTER_API_KEY_2,
+    process.env.OPENROUTER_API_KEY_3,
+    process.env.OPENROUTER_API_KEY_4,
+    process.env.OPENROUTER_API_KEY_5,
+  ].filter(Boolean); // undefined/empty hata do
+
+  if (!keys.length) {
+    return Response.json({ error: 'No API keys configured' }, { status: 500 });
   }
 
-  const bodyWithoutStream = { ...body, stream: false };
-  delete bodyWithoutStream.provider; // Gemini/OpenRouter field OpenRouter ko nahi bhejna
+  const bodyToSend = { ...body, stream: false };
+  delete bodyToSend.provider;
 
-  const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer':  'https://kaali-raat.vercel.app',
-      'X-Title':       'Kaali Raat Studio',
-    },
-    body: JSON.stringify(bodyWithoutStream),
-  });
+  // Har key try karo — 429/error pe next
+  for (let i = 0; i < keys.length; i++) {
+    const apiKey = keys[i];
+    try {
+      const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer':  'https://kaali-raat.vercel.app',
+          'X-Title':       'Kaali Raat Studio',
+        },
+        body: JSON.stringify(bodyToSend),
+      });
 
-  const data = await upstream.json();
-
-  if (!upstream.ok) {
-    return Response.json(data, { status: upstream.status });
-  }
-
-  const content = data.choices?.[0]?.message?.content || '';
-
-  if (body?.stream) {
-    const sseChunk = JSON.stringify({
-      choices: [{ delta: { content }, finish_reason: null }]
-    });
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(`data: ${sseChunk}\n\n`));
-        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-        controller.close();
+      // 429 ya 5xx pe next key try karo
+      if (upstream.status === 429 || upstream.status >= 500) {
+        console.log(`Key ${i + 1} failed (${upstream.status}), trying next...`);
+        continue;
       }
-    });
-    return new Response(stream, {
-      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
-    });
-  }
 
-  return Response.json(data);
-}
+      const data = await upstream.json();
 
-// ── Gemini — same structure, same response format ──
-async function handleGemini(body) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: 'GEMINI_API_KEY not configured on server' }, { status: 500 });
-  }
-
-  // OpenAI messages → Gemini format
-  const systemMsg = (body.messages || []).find(m => m.role === 'system');
-  const otherMsgs = (body.messages || []).filter(m => m.role !== 'system');
-
-  const contents = otherMsgs.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
-
-  const geminiBody = {
-    contents,
-    ...(systemMsg && { system_instruction: { parts: [{ text: systemMsg.content }] } }),
-    generationConfig: {
-      maxOutputTokens: body.max_tokens || 1000,
-      temperature: body.temperature ?? 0.9,
-    },
-  };
-
-  const upstream = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geminiBody) }
-  );
-
-  const data = await upstream.json();
-
-  if (!upstream.ok) {
-    return Response.json(data, { status: upstream.status });
-  }
-
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  // OpenAI format mein wrap — frontend ka koi code nahi todega
-  const openAiFormat = {
-    choices: [{ message: { content }, finish_reason: 'stop' }]
-  };
-
-  if (body?.stream) {
-    // Purane OpenRouter wala SSE simulate karo — same as before
-    const sseChunk = JSON.stringify({
-      choices: [{ delta: { content }, finish_reason: null }]
-    });
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(`data: ${sseChunk}\n\n`));
-        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-        controller.close();
+      if (!upstream.ok) {
+        return Response.json(data, { status: upstream.status });
       }
-    });
-    return new Response(stream, {
-      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
-    });
+
+      const content = data.choices?.[0]?.message?.content || '';
+
+      if (body?.stream) {
+        const sseChunk = JSON.stringify({
+          choices: [{ delta: { content }, finish_reason: null }]
+        });
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(`data: ${sseChunk}\n\n`));
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            controller.close();
+          }
+        });
+        return new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
+        });
+      }
+
+      return Response.json(data);
+
+    } catch (err) {
+      console.log(`Key ${i + 1} threw error: ${err.message}, trying next...`);
+      continue;
+    }
   }
 
-  return Response.json(openAiFormat);
+  // Saari keys fail ho gayi
+  return Response.json({ error: 'All API keys exhausted or rate limited' }, { status: 429 });
 }
