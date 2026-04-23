@@ -172,20 +172,27 @@ function GeneratePage({ user }) {
       const res = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
-          model:'openai/gpt-4o-mini', max_tokens:400, temperature:0.97,
-          messages:[{ role:'user',
-            content:`You are a Hindi horror story title generator.\n\nGenre/Setting: ${genreHint}${topVideoHint}${existingTitles}\n\nINSPIRATION SEED (isse seedha copy mat karo, sirf direction le): "${randomSeed}"\n\nSTRICT RULES:\n- Title MUST be in Hindi Devanagari script only.\n- Title must be 3-6 Hindi words. NO English words.\n- Plot: 3-4 sentences in Hindi Devanagari.\n- Har baar NAYA aur ALAG angle lo — clichéd setups avoid karo.\n- Protagonist alag ho, villain/threat alag ho, setting fresh ho.\n\nRespond ONLY in JSON:\n{"title":"हिंदी शीर्षक","plot":"हिंदी में कहानी का विचार"}`
-          }],
+          model:'openai/gpt-4o-mini', max_tokens:500, temperature:0.9,
+          messages:[
+            { role:'system', content:'You are a JSON-only response bot. You MUST respond with valid JSON only. No markdown, no explanation, no extra text. Just the raw JSON object.' },
+            { role:'user',
+              content:`Hindi horror story idea generate karo.\n\nGenre/Setting: ${genreHint}${topVideoHint}${existingTitles}\n\nINSPIRATION SEED (sirf direction ke liye, copy mat karo): "${randomSeed}"\n\nRULES:\n- Title: 3-6 Hindi Devanagari words only, NO English\n- Plot: 3-4 Hindi Devanagari sentences\n- Fresh angle — naya protagonist, naya threat, naya setting\n\nRespond with this exact JSON (no markdown, no extra text):\n{"title":"हिंदी शीर्षक यहाँ","plot":"हिंदी में कहानी का विचार यहाँ"}`
+            }
+          ],
         }),
       });
-      const data   = await res.json();
-      const raw    = data.choices?.[0]?.message?.content||'';
-      const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
-      generatedRef.current = { title:parsed.title||'', prompt:parsed.plot||'' };
-      if (parsed.title && parsed.plot) {
-        setTitlePreview(parsed.title); setShowStart(true); setGenState('done');
-      } else { toast('⚠️ Dobara try karo'); setGenState('idle'); }
-    } catch(err) { toast('❌ '+err.message); setGenState('idle'); }
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+      const raw  = (data.choices?.[0]?.message?.content || '').trim();
+      if (!raw) throw new Error('Empty response');
+      // Robust JSON extract — backticks, extra text sab handle karo
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('JSON nahi mila response mein');
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!parsed.title || !parsed.plot) throw new Error('Title ya plot missing');
+      generatedRef.current = { title: parsed.title, prompt: parsed.plot };
+      setTitlePreview(parsed.title); setShowStart(true); setGenState('done');
+    } catch(err) { toast('❌ ' + err.message + ' — Dobara try karo'); setGenState('idle'); }
   }
 
   // ── Start Studio ──────────────────────────────────
