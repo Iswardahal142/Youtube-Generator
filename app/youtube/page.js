@@ -104,11 +104,12 @@ function YoutubePage({ user }) {
         const latest = sorted[0];
         setLastEp(latest);
         if (latest.ytTitle) {
-          setSelectedTitle(latest.ytTitle);
-          setGeneratedTitles([latest.ytTitle]);
-          setCurrentTitleIdx(0);
-        }
-        if (latest.ytDesc) setDesc(latest.ytDesc);
+  setSelectedTitle(latest.ytTitle);
+  setGeneratedTitles([latest.ytTitle]);
+  setCurrentTitleIdx(0);
+}
+if (latest.ytDesc)   setDesc(latest.ytDesc);
+if (latest.ytThumb)  setThumbResult(latest.ytThumb); // ADD
       }
     });
 
@@ -236,25 +237,39 @@ function YoutubePage({ user }) {
 // ── Thumbnail ─────────────────────────────────────
   async function enhanceThumbPrompt() {
     const chunks = lastEp?.storyChunks || [];
+    const chars  = lastEp?.savedChars  || [];
     const base = thumbInput.trim() || chunks.map(c=>c.text).join(' ').slice(0,300);
     if (!base) { toast('⚠️ Koi prompt likho ya pehle story complete karo!'); return; }
     setThumbLoading(true); setThumbResult('');
+
+    // Characters ka visual description build karo
+    const charDesc = chars.length
+      ? chars.map(c=>`${c.name}(${c.role}): ${c.visual||c.desc||''}`).join(' | ')
+      : '';
+
+    const promptContent = `Story snippet: "${base}"\n\n${charDesc ? `Characters in this episode:\n${charDesc}\n\n` : ''}Create a viral YouTube horror thumbnail image prompt (English, 80-100 words).\n\nRequirements:\n- Show ALL main characters with their exact appearance from the description\n- Each character's expression matches their role (hero=scared/shocked, villain=menacing/dark)\n- Cinematic 16:9 composition\n- Dark horror atmosphere, deep reds and blacks\n- Dramatic lighting, one character illuminated by ghostly/moonlight\n- Webtoon 2D flat illustration style\n- High CTR visual — shocking, curiosity-inducing\n\nSirf prompt text do, koi heading mat lagao.`;
+
     try {
-      const res  = await fetch('/api/ai',{
+      const res = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:300, temperature:0.8,
-          messages:[{ role:'user', content:`Basic prompt: "${base}"\n\nIs basic prompt ko ek viral YouTube horror thumbnail image prompt mein enhance karo.\n\nRequirements:\n- Cinematic, dramatic, high-detail\n- Dark horror atmosphere, red/dark color palette\n- Face expressions of fear/shock\n- 16:9 YouTube thumbnail format\n- 80-100 words, English mein\n\nSirf enhanced prompt text do.` }],
+        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:400, temperature:0.8,
+          messages:[{ role:'user', content: promptContent }],
         }),
       });
       const data = await res.json();
-      toast('❌ Response: ' + JSON.stringify(data).slice(0,100));
       const result = data.choices?.[0]?.message?.content?.trim()||'';
-      if (result) setThumbResult(result);
-      else toast('⚠️ Result nahi aaya: ' + JSON.stringify(data).slice(0,80));
+      if (result) {
+        setThumbResult(result);
+        // Firestore mein save karo
+        if (lastEp) {
+          const { db_saveEpisode } = await import('../../lib/firebase');
+          await db_saveEpisode(user.uid, { ...lastEp, ytThumb: result, savedAt: Date.now() });
+          setLastEp(prev => prev ? { ...prev, ytThumb: result } : prev);
+        }
+      } else toast('⚠️ Result nahi aaya, dobara try karo');
     } catch(e) { toast('❌ '+e.message); }
     setThumbLoading(false);
   }
-
   function copyText(text, label) {
     navigator.clipboard.writeText(text).then(()=>toast(`✅ ${label||'Copied'}!`));
   }
