@@ -190,29 +190,22 @@ async function generateYtDesc() {
     setCurrentTitleIdx(i => (i + 1) % generatedTitles.length);
   }
 
+ // Select title + save to Firebase
   async function selectAndSaveTitle() {
-  const titleToSave = generatedTitles[currentTitleIdx];
-  if (!titleToSave || !lastEp) return;
-  setIsSavingTitle(true);
-  try {
-    const { db_saveEpisode } = await import('../../lib/firebase');
-    const mainTitle = (lastEp.title||'').split(' | ')[0].trim() || lastEp.title || '';
-    const seasonEp  = formatSeasonEp(lastEp.season, lastEp.epNum);
-    const newFullTitle = `${mainTitle} | ${titleToSave} | ${seasonEp}`;
-    await db_saveEpisode(user.uid, {
-      ...lastEp,
-      title: newFullTitle,
-      ytTitle: titleToSave,
-      savedAt: Date.now(),
-    });
-    setLastEp(prev => prev ? { ...prev, title: newFullTitle, ytTitle: titleToSave } : prev);
-    setSelectedTitle(titleToSave);
-    toast('✅ Title select aur save ho gaya!');
-  } catch(e) {
-    toast('❌ Save nahi hua: ' + e.message);
-  }
-  setIsSavingTitle(false);
-}
+    const titleToSave = generatedTitles[currentTitleIdx];
+    if (!titleToSave || !lastEp) return;
+    setIsSavingTitle(true);
+    try {
+      const { db_saveEpisode } = await import('../../lib/firebase');
+      const mainTitle = (lastEp.title||'').split(' | ')[0].trim() || lastEp.title || '';
+      const seasonEp  = formatSeasonEp(lastEp.season, lastEp.epNum);
+      const newFullTitle = `${mainTitle} | ${titleToSave} | ${seasonEp}`;
+      await db_saveEpisode(user.uid, {
+        ...lastEp,
+        title: newFullTitle,
+        ytTitle: titleToSave,
+        savedAt: Date.now(),
+      });
 
         // Update local lastEp so comparison card also updates
         setLastEp(prev => prev ? { ...prev, title: newFullTitle, ytTitle: titleToSave } : prev);
