@@ -11,6 +11,18 @@ import { ToastProvider, useToast } from '../../components/Toast';
 function GeneratePage({ user }) {
   const router = useRouter();
   const toast  = useToast();
+
+  // ── AI provider helper — SideDrawer se window.__aiProvider set hota hai ──
+  function getProvider() {
+    return (typeof window !== 'undefined' && window.__aiProvider) ? window.__aiProvider : 'openrouter';
+  }
+  function aiFetch(bodyObj) {
+    return fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: getProvider(), ...bodyObj, provider: getProvider() }),
+    });
+  }
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // ── Setup screen ──
@@ -171,7 +183,7 @@ function GeneratePage({ user }) {
     try {
       const res = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
+        body: JSON.stringify({ provider: getProvider(),
           model:'openai/gpt-4o-mini', max_tokens:500, temperature:0.9,
           messages:[
             { role:'system', content:'You are a JSON-only response bot. You MUST respond with valid JSON only. No markdown, no explanation, no extra text. Just the raw JSON object.' },
@@ -304,9 +316,9 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
     try {
       const res = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ model:'openai/gpt-4o-mini',
-          messages:[{role:'system',content:systemPrompt},...messages],
-          max_tokens:400, temperature:0.88, stream:true }),
+        body:JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini',
+           messages:[{role:'system',content:systemPrompt},...messages],
+           max_tokens:400, temperature:0.88, stream:true }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -355,7 +367,7 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
     try {
       const res=await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ model:'openai/gpt-4o-mini',
+        body:JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini',
           messages:[
             {role:'system',content:'Write ONLY in Hindi Devanagari script.'},
             {role:'user',content:`${storyCtx}\n\nPowerful scary ending हिंदी में। 100-120 words। "समाप्त" se khatam karo।`},
@@ -391,7 +403,7 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
           const sznFmt = (stateRef.current.season||'SEASON 1').replace('SEASON ','').padStart(2,'0');
           const epFmt  = (stateRef.current.epNum||'EP 01').replace('EP ','').padStart(2,'0');
           const res2 = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:80, temperature:0.9,
+            body: JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini', max_tokens:80, temperature:0.9,
               messages:[{ role:'user', content:`Story title: "${baseT}"\nStory snippet: "${snippet}"\n\nEk viral Hindi YouTube horror subtitle banao jo curiosity aur fear create kare.\nFormat: "क्या [kuch interesting]?" ya "[kuch dramatic]!" — 6-10 Hindi words only.\nSirf subtitle text do, koi extra text nahi.` }],
             }),
           });
@@ -421,7 +433,7 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
     try {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ provider: getProvider(),
           model: 'openai/gpt-4o-mini', max_tokens: 3000, temperature: 0.35,
           messages: [{
             role: 'user',
@@ -467,7 +479,7 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
     try {
       const res=await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:1500, temperature:0.3,
+        body:JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini', max_tokens:1500, temperature:0.3,
           messages:[{role:'user', content:`Story: "${stateRef.current.title||title}"\n\n${storyText}\n\nIs story ke saare characters list karo. Har character ke liye JSON:\n\n[{"name":"naam","role":"Hero/Villain/Supporting","desc":"Hindi mein character description 2-3 lines","appear":"Kis part mein aaya"}]\n\nSirf JSON array, koi extra text nahi.`}],
         }),
       });
@@ -488,7 +500,7 @@ ${bible?`\nPREVIOUS SEASON CONTINUITY:\n${bible}`:''}`;
     try {
       const res=await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:2500, temperature:0.7,
+        body:JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini', max_tokens:2500, temperature:0.7,
           messages:[
             { role:'system', content:`Tu ek professional Hindi horror narrator hai jo ElevenLabs ke liye script likhta hai.\nSirf Hindi Devanagari. ElevenLabs break tags use karo:\n<break time="0.5s" /> <break time="1.0s" /> <break time="1.5s" /> <break time="2.0s" />\nEmotion tags: [scared] [whisper] [laugh] [cry] [angry] [shocked] [calm]` },
             { role:'user', content:`Yeh horror story hai:\n\n${fullStory}\n\nPoori story ka ElevenLabs-ready HINDI NARRATION script likho.\n- Sirf Hindi Devanagari\n- Break tags sahi jagah lagao\n- Emotion tags use karo\n- Koi heading mat lagao, seedha narration shuru karo` },
@@ -916,7 +928,7 @@ function ExportTitles({ storyChunks, stateRef, epNum, toast }) {
     const curTitle  = stateRef.current.title||'';
     try {
       const res  = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:600, temperature:0.9,
+        body: JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini', max_tokens:600, temperature:0.9,
           messages:[{ role:'user', content:`Tu ek viral Hindi YouTube horror channel ka title expert hai.\n\nStory Title: "${curTitle}"\nStory Summary: ${storyText.slice(0,600)}\n\n7 VIRAL YouTube titles banao:\n- PURE HINDI DEVANAGARI mein\n- High CTR — suspense, curiosity, fear\n- 50-70 characters each\n- Episode number include karo: "${epNum}"\n\nSirf JSON array:\n["title 1","title 2","title 3","title 4","title 5","title 6","title 7"]` }],
         }),
       });
@@ -958,7 +970,7 @@ function ExportDesc({ storyChunks, stateRef, epNum, season, toast }) {
     const curTitle  = stateRef.current.title||'';
     try {
       const res  = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:800, temperature:0.7,
+        body: JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini', max_tokens:800, temperature:0.7,
           messages:[{ role:'user', content:`Story: "${curTitle}" — ${season} ${epNum}\n\n${storyText}\n\nIs YouTube video ke liye Hindi description + hashtags banao.\n- 3-4 para Hindi description (mystery/horror hook)\n- Subscribe CTA\n- 15-20 relevant hashtags\nSEO optimized. Ready-to-paste.` }],
         }),
       });
@@ -993,7 +1005,7 @@ function ExportThumb({ storyChunks, toast }) {
     setLoading(true); setResult('');
     try {
       const res  = await fetch('/api/ai',{ method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:300, temperature:0.8,
+        body: JSON.stringify({ provider: getProvider(), model:'openai/gpt-4o-mini', max_tokens:300, temperature:0.8,
           messages:[{ role:'user', content:`Basic prompt: "${base}"\n\nIs ko viral YouTube horror thumbnail prompt mein enhance karo.\n- Cinematic, dramatic, dark horror atmosphere\n- Red/dark color palette, fear/shock expressions\n- 16:9 YouTube thumbnail format\n- 80-100 words English mein\n\nSirf enhanced prompt text do.` }],
         }),
       });
