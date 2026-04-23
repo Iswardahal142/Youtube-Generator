@@ -829,24 +829,39 @@ function MyStoriesPage({ user }) {
                         <div className="end-banner-sub">{activeEp.season} · {activeEp.epNum} complete!</div>
                         {seasonEnded&&<div style={{fontSize:11,color:'#cc6600',background:'rgba(80,30,0,0.15)',border:'1px solid #441100',borderRadius:8,padding:'8px 12px',marginBottom:10}}>🔒 Season complete — editing band hai</div>}
                         <div className="btn-row" style={{flexWrap:'wrap',gap:8}}>
-                          {/* storyFullyEnded=false → Episode End → Next Episode + Season End (sirf last ep pe) */}
-                          {!seasonEnded&&!(activeEp?.storyFullyEnded)&&(
-                            <>
-                              <button className="btn btn-primary" onClick={()=>setShowNextEpModal(true)}>▶ Next Episode</button>
-                              {/* Season End sirf tab dikhao jab last episode ho */}
-                              {(()=>{
-                                const maxEp=Math.max(...seasonEps.map(e=>parseInt((e.epNum||'EP 01').match(/\d+/)?.[0]||1)));
-                                const curEp=parseInt((activeEp?.epNum||'EP 01').match(/\d+/)?.[0]||1);
-                                return curEp===maxEp;
-                              })()&&(
-                                seasonFinaleLoading
-                                  ?<button className="btn btn-ghost" disabled style={{borderColor:'#cc6600',color:'#cc6600',opacity:0.7}}>
-                                    <div className="spinner" style={{display:'inline-block',width:10,height:10,marginRight:6}}/>Finale likh raha hai...
-                                  </button>
-                                  :<button className="btn btn-ghost" onClick={endSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🏁 Season End Karo</button>
-                              )}
-                            </>
-                          )}
+                          {/* storyFullyEnded=false → Episode End → Next Episode + Season End */}
+{!seasonEnded&&!(activeEp?.storyFullyEnded)&&(
+  <>
+    {(()=>{
+      const curEpNum = parseInt((activeEp?.epNum||'EP 01').match(/\d+/)?.[0]||1);
+      const nextEpStr = 'EP '+String(curEpNum+1).padStart(2,'0');
+      const nextEpAlreadyExists = seasonEps.find(e=>e.epNum===nextEpStr);
+      const maxEp = Math.max(...seasonEps.map(e=>parseInt((e.epNum||'EP 01').match(/\d+/)?.[0]||1)));
+      const isLast = curEpNum===maxEp;
+      return (
+        <>
+          {/* Next Episode button — redirect if exists, create if not */}
+          {nextEpAlreadyExists
+            ? <button className="btn btn-primary" onClick={()=>openEpisode(nextEpAlreadyExists)}>
+                ▶ {nextEpStr} Dekho
+              </button>
+            : <button className="btn btn-primary" onClick={()=>setShowNextEpModal(true)}>
+                ▶ Next Episode
+              </button>
+          }
+          {/* Season End sirf last ep pe aur next ep nahi hona chahiye */}
+          {isLast&&!nextEpAlreadyExists&&(
+            seasonFinaleLoading
+              ?<button className="btn btn-ghost" disabled style={{borderColor:'#cc6600',color:'#cc6600',opacity:0.7}}>
+                <div className="spinner" style={{display:'inline-block',width:10,height:10,marginRight:6}}/>Finale likh raha hai...
+              </button>
+              :<button className="btn btn-ghost" onClick={endSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🏁 Season End Karo</button>
+          )}
+        </>
+      );
+    })()}
+  </>
+)}
                           {/* storyFullyEnded=true → Story End → Only season options */}
                           {(activeEp?.storyFullyEnded||seasonEnded)&&(
                             nextSeasonExists
