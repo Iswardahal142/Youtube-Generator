@@ -235,7 +235,9 @@ function YoutubePage({ user }) {
 
 // ── Thumbnail ─────────────────────────────────────
   async function enhanceThumbPrompt() {
-    const base = thumbInput || (lastEp?.storyChunks||[]).map(c=>c.text).join(' ').slice(0,300);
+    const chunks = lastEp?.storyChunks || [];
+    const base = thumbInput.trim() || chunks.map(c=>c.text).join(' ').slice(0,300);
+    if (!base) { toast('⚠️ Koi prompt likho ya pehle story complete karo!'); return; }
     setThumbLoading(true); setThumbResult('');
     try {
       const res  = await fetch('/api/ai',{
@@ -245,7 +247,9 @@ function YoutubePage({ user }) {
         }),
       });
       const data = await res.json();
-      setThumbResult(data.choices?.[0]?.message?.content?.trim()||'');
+      const result = data.choices?.[0]?.message?.content?.trim()||'';
+      if (result) setThumbResult(result);
+      else toast('⚠️ Result nahi aaya, dobara try karo');
     } catch(e) { toast('❌ '+e.message); }
     setThumbLoading(false);
   }
@@ -257,7 +261,6 @@ function YoutubePage({ user }) {
   const scoreColor = !comparison ? '#555'
     : comparison.score>=60 ? '#00cc55'
     : comparison.score>=30 ? '#ffaa00' : '#cc3333';
-
   // Current showing title (only generated part)
   const currentTitle = generatedTitles[currentTitleIdx] || '';
   const isCurrentSelected = selectedTitle === currentTitle;
