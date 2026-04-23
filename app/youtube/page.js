@@ -190,28 +190,29 @@ async function generateYtDesc() {
     setCurrentTitleIdx(i => (i + 1) % generatedTitles.length);
   }
 
-  // Select title + save to Firebase
   async function selectAndSaveTitle() {
-    const titleToSave = generatedTitles[currentTitleIdx];
-    if (!titleToSave) return;
-    setIsSavingTitle(true);
-    try {
-      const { db_saveEpisode, db_getEpisodes } = await import('../../lib/firebase');
-      const eps = await db_getEpisodes(user.uid);
-      if (eps?.length) {
-        const sorted = [...eps].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
-        const latestEp = sorted[0];
-
-        const mainTitle = (latestEp.title||'').split(' | ')[0].trim() || latestEp.title || '';
-        const seasonEp  = formatSeasonEp(latestEp.season || storyRef.current.season, latestEp.epNum || storyRef.current.epNum);
-        const newFullTitle = `${mainTitle} | ${titleToSave} | ${seasonEp}`;
-
-        await db_saveEpisode(user.uid, {
-          ...latestEp,
-          title: newFullTitle,
-          ytTitle: titleToSave,
-          savedAt: Date.now(),
-        });
+  const titleToSave = generatedTitles[currentTitleIdx];
+  if (!titleToSave || !lastEp) return;
+  setIsSavingTitle(true);
+  try {
+    const { db_saveEpisode } = await import('../../lib/firebase');
+    const mainTitle = (lastEp.title||'').split(' | ')[0].trim() || lastEp.title || '';
+    const seasonEp  = formatSeasonEp(lastEp.season, lastEp.epNum);
+    const newFullTitle = `${mainTitle} | ${titleToSave} | ${seasonEp}`;
+    await db_saveEpisode(user.uid, {
+      ...lastEp,
+      title: newFullTitle,
+      ytTitle: titleToSave,
+      savedAt: Date.now(),
+    });
+    setLastEp(prev => prev ? { ...prev, title: newFullTitle, ytTitle: titleToSave } : prev);
+    setSelectedTitle(titleToSave);
+    toast('✅ Title select aur save ho gaya!');
+  } catch(e) {
+    toast('❌ Save nahi hua: ' + e.message);
+  }
+  setIsSavingTitle(false);
+}
 
         // Update local lastEp so comparison card also updates
         setLastEp(prev => prev ? { ...prev, title: newFullTitle, ytTitle: titleToSave } : prev);
@@ -275,14 +276,13 @@ async function generateYtDesc() {
   // Current showing title (only generated part)
   const currentTitle = generatedTitles[currentTitleIdx] || '';
   const isCurrentSelected = selectedTitle === currentTitle;
-
+  
   // Full title for display: mainTitle | generatedTitle | S 01 EP 01
-  const mainTitlePart = (storyRef.current.title||'').split(' | ')[0] || storyRef.current.title || '';
-  const seasonEpPart  = formatSeasonEp(storyRef.current.season, storyRef.current.epNum);
+  const mainTitlePart = lastEp ? (lastEp.title||'').split(' | ')[0] || lastEp.title || '' : '';
+  const seasonEpPart  = lastEp ? formatSeasonEp(lastEp.season, lastEp.epNum) : '';
   const fullDisplayTitle = currentTitle
     ? `${mainTitlePart} | ${currentTitle} | ${seasonEpPart}`
     : '';
-
   // ─────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────
