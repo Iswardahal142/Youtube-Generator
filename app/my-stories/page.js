@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AuthWrapper from '../../components/AuthWrapper';
 import BottomNav from '../../components/BottomNav';
 import SideDrawer from '../../components/SideDrawer';
@@ -45,6 +46,8 @@ function PanelHeader({ icon, title, open, onToggle, rightEl }) {
 function MyStoriesPage({ user }) {
   const toast = useToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [screen,     setScreen]     = useState('stories');
   const [loading,    setLoading]    = useState(true);
 
@@ -93,6 +96,8 @@ function MyStoriesPage({ user }) {
   const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
   const [deleteInput,        setDeleteInput]        = useState('');
 
+  const [autoStartGenerate, setAutoStartGenerate] = useState(false);
+
   const storyAreaRef = useRef(null);
   const isGenRef     = useRef(false);
   const stateRef     = useRef({});
@@ -100,7 +105,57 @@ function MyStoriesPage({ user }) {
   const displayName = user?.displayName || user?.email || 'User';
   const initial     = displayName.charAt(0).toUpperCase();
 
-  useEffect(() => { if (user?.uid) loadEpisodes(); }, [user?.uid]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    loadEpisodes();
+  }, [user?.uid]);
+
+  // openEp URL param handle karo — episodes load hone ke baad auto-open
+  useEffect(() => {
+    const openEpId = searchParams.get('openEp');
+    if (!openEpId || !allEps.length) return;
+    const ep = allEps.find(e => e.id === openEpId);
+    if (!ep) return;
+    // URL param clean karo
+    router.replace('/my-stories', { scroll: false });
+    // Season episodes set karo
+    const base = (ep.title || 'Untitled').split(' | ')[0].trim();
+    const seps = (groups[base] || [])
+      .filter(e => (e.season || 'SEASON 1') === (ep.season || 'SEASON 1'))
+      .sort((a,b) => (a.epNum||'').localeCompare(b.epNum||''));
+    setSeasonEps(seps);
+    setCurStory(base);
+    setCurSeason(ep.season || 'SEASON 1');
+    // Episode open karo
+    const seasonEnded = seps.every(e => e.ended);
+    setActiveEp({ ...ep, seasonEnded });
+    setPlayerChunks(ep.storyChunks || []);
+    setPlayerEnded(ep.ended || false);
+    setShowEndBanner(ep.ended || false);
+    setWordCount((ep.storyChunks||[]).reduce((a,c)=>a+c.text.split(/\s+/).length,0));
+    setScenes(ep.savedScenes || null);
+    setChars(ep.savedChars || null);
+    setShowAnalysis(false);
+    setExpandedScene(null);
+    setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
+    stateRef.current = {
+      title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
+      currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
+      characterBible: ep.characterBible||null, savedChars: ep.savedChars||null,
+    };
+    setScreen('player');
+    // Agar naye episode mein koi chunks nahi — auto generate flag set karo
+    if (!ep.storyChunks?.length) {
+      setAutoStartGenerate(true);
+    }
+  }, [allEps]);
+
+  // autoStartGenerate flag se sendContinue trigger karo
+  useEffect(() => {
+    if (!autoStartGenerate) return;
+    setAutoStartGenerate(false);
+    setTimeout(() => sendContinue(), 200);
+  }, [autoStartGenerate]);
 
   async function loadEpisodes() {
     setLoading(true);
