@@ -253,10 +253,9 @@ async function generateYtDesc() {
     setDescLoading(false);
   }
 
-  // ── Thumbnail ─────────────────────────────────────
+// ── Thumbnail ─────────────────────────────────────
   async function enhanceThumbPrompt() {
-    const { chunks } = storyRef.current;
-    const base = thumbInput || chunks.map(c=>c.text).join(' ').slice(0,300);
+    const base = thumbInput || (lastEp?.storyChunks||[]).map(c=>c.text).join(' ').slice(0,300);
     setThumbLoading(true); setThumbResult('');
     try {
       const res  = await fetch('/api/ai',{
