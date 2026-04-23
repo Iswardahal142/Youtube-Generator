@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import AuthWrapper from '../../components/AuthWrapper';
 import BottomNav from '../../components/BottomNav';
 import SideDrawer from '../../components/SideDrawer';
@@ -46,8 +45,6 @@ function PanelHeader({ icon, title, open, onToggle, rightEl }) {
 function MyStoriesPage({ user }) {
   const toast = useToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const [screen,     setScreen]     = useState('stories');
   const [loading,    setLoading]    = useState(true);
 
@@ -96,7 +93,12 @@ function MyStoriesPage({ user }) {
   const [deleteConfirmStory, setDeleteConfirmStory] = useState(null);
   const [deleteInput,        setDeleteInput]        = useState('');
 
-  const [autoStartGenerate, setAutoStartGenerate] = useState(false);
+  // ── Next Episode modal (Yes/No after episode end) ──
+  const [showNextEpModal,   setShowNextEpModal]   = useState(false);
+  const [nextEpLoading,     setNextEpLoading]     = useState(false);
+
+  // ── Season End finale loading ──
+  const [seasonFinaleLoading, setSeasonFinaleLoading] = useState(false);
 
   const storyAreaRef = useRef(null);
   const isGenRef     = useRef(false);
@@ -105,57 +107,7 @@ function MyStoriesPage({ user }) {
   const displayName = user?.displayName || user?.email || 'User';
   const initial     = displayName.charAt(0).toUpperCase();
 
-  useEffect(() => {
-    if (!user?.uid) return;
-    loadEpisodes();
-  }, [user?.uid]);
-
-  // openEp URL param handle karo — episodes load hone ke baad auto-open
-  useEffect(() => {
-    const openEpId = searchParams.get('openEp');
-    if (!openEpId || !allEps.length) return;
-    const ep = allEps.find(e => e.id === openEpId);
-    if (!ep) return;
-    // URL param clean karo
-    router.replace('/my-stories', { scroll: false });
-    // Season episodes set karo
-    const base = (ep.title || 'Untitled').split(' | ')[0].trim();
-    const seps = (groups[base] || [])
-      .filter(e => (e.season || 'SEASON 1') === (ep.season || 'SEASON 1'))
-      .sort((a,b) => (a.epNum||'').localeCompare(b.epNum||''));
-    setSeasonEps(seps);
-    setCurStory(base);
-    setCurSeason(ep.season || 'SEASON 1');
-    // Episode open karo
-    const seasonEnded = seps.every(e => e.ended);
-    setActiveEp({ ...ep, seasonEnded });
-    setPlayerChunks(ep.storyChunks || []);
-    setPlayerEnded(ep.ended || false);
-    setShowEndBanner(ep.ended || false);
-    setWordCount((ep.storyChunks||[]).reduce((a,c)=>a+c.text.split(/\s+/).length,0));
-    setScenes(ep.savedScenes || null);
-    setChars(ep.savedChars || null);
-    setShowAnalysis(false);
-    setExpandedScene(null);
-    setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
-    stateRef.current = {
-      title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
-      currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
-      characterBible: ep.characterBible||null, savedChars: ep.savedChars||null,
-    };
-    setScreen('player');
-    // Agar naye episode mein koi chunks nahi — auto generate flag set karo
-    if (!ep.storyChunks?.length) {
-      setAutoStartGenerate(true);
-    }
-  }, [allEps]);
-
-  // autoStartGenerate flag se sendContinue trigger karo
-  useEffect(() => {
-    if (!autoStartGenerate) return;
-    setAutoStartGenerate(false);
-    setTimeout(() => sendContinue(), 200);
-  }, [autoStartGenerate]);
+  useEffect(() => { if (user?.uid) loadEpisodes(); }, [user?.uid]);
 
   async function loadEpisodes() {
     setLoading(true);
@@ -352,15 +304,37 @@ function MyStoriesPage({ user }) {
   async function generateCharsAuto(chunks) {
     setCharsLoading(true);
     const storyText=(chunks||playerChunks).map(c=>c.text).join('\n\n');
+    // Previous episodes ke characters bible se status track karo
+    const prevBible = stateRef.current.characterBible;
+    const prevCharHint = Array.isArray(prevBible) && prevBible.length
+      ? `\n\nPREVIOUS EPISODES CHARACTERS STATUS:\n${prevBible.map(c=>`- ${c.name} (${c.role}) — Status: ${c.status||'Alive'}`).join('\n')}\n\nInhein continuity maintain karo — jo mar gaya woh wapas normal insaan nahi ban sakta!`
+      : '';
     try{
-      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:1500,temperature:0.3,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}"\n\n${storyText}\n\nIs story ke SAARE characters identify karo.\n\n[{"name":"naam","role":"Hero/Villain/Supporting/Minor","desc":"2-3 lines Hindi mein","visual":"English: age, height, build, face, hair, eye color, skin, clothing. 30-40 words.","appear":"Kis part mein aaya"}]\n\nSirf JSON array.`}]})});
+      const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:1800,temperature:0.3,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}"
+
+${storyText}${prevCharHint}
+
+Is story ke SAARE characters identify karo. STATUS field zaroori hai:
+- "Alive" = zinda
+- "Dead" = mar gaya (wapas normal insaan ban ke nahi aa sakta)
+- "Ghost" = bhoot ban gaya
+- "Missing" = gaayab hai
+
+[{"name":"naam","role":"Hero/Villain/Supporting/Minor","desc":"2-3 lines Hindi mein","visual":"English: age, height, build, face, hair, eye color, skin, clothing. 30-40 words.","appear":"Kis part mein aaya","status":"Alive/Dead/Ghost/Missing"}]
+
+Sirf JSON array.`}]})}); 
       const data=await res.json();
       const parsed=JSON.parse((data.choices?.[0]?.message?.content?.trim()||'[]').replace(/```json|```/g,'').trim());
-      if(Array.isArray(parsed)&&parsed.length){setChars(parsed);stateRef.current.savedChars=parsed;stateRef.current.characterBible=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} characters ready!`);}
+      if(Array.isArray(parsed)&&parsed.length){
+        setChars(parsed);
+        stateRef.current.savedChars=parsed;
+        stateRef.current.characterBible=parsed;
+        saveEpisode(playerChunks,playerEnded);
+        toast(`✅ ${parsed.length} characters ready!`);
+      }
     }catch(e){toast('❌ Characters: '+e.message);}
     setCharsLoading(false);
   }
-
   async function fetchMusicAuto() {
     setYtMusicLoading(true); setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
     try {
@@ -376,12 +350,50 @@ function MyStoriesPage({ user }) {
     setYtMusicLoading(false);
   }
 
+  // ── Generate Season Bible (all episodes summary + char status) ──
+  async function generateSeasonBible(allEpsSoFar, currentChunks, currentEpNum) {
+    try {
+      // Saare previous episodes ka summary collect karo
+      const epSummaries = allEpsSoFar
+        .filter(e => e.ended && e.storyChunks?.length)
+        .map(e => `[${e.season} ${e.epNum}]:\n${e.storyChunks.map(c=>c.text).join(' ').slice(0,600)}...`)
+        .join('\n\n');
+      const currentSummary = currentChunks.length
+        ? `[Current ${currentEpNum}]:\n${currentChunks.map(c=>c.text).join(' ').slice(0,600)}...`
+        : '';
+      const charBible = stateRef.current.characterBible;
+      const charStatus = Array.isArray(charBible) && charBible.length
+        ? `\n\nCHARACTER STATUS:\n${charBible.map(c=>`- ${c.name} (${c.role}): ${c.status||'Alive'}${c.status==='Dead'?' — DEAD, wapas normal nahi aa sakta':c.status==='Ghost'?' — GHOST ban gaya':''}`).join('\n')}`
+        : '';
+
+      const res = await fetch('/api/ai', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model:'openai/gpt-4o-mini', max_tokens:800, temperature:0.3,
+          messages:[{role:'user', content:`Hindi horror story ka Season Bible banao. Yeh information hai:\n\n${epSummaries}\n${currentSummary}${charStatus}\n\nEk concise Season Bible banao jisme:\n1. Main plot thread (kya rahasya chhal raha hai)\n2. Character statuses (kaun zinda, kaun mara, kaun supernatural ban gaya)\n3. Unresolved mysteries (kya abhi tak pata nahi chala)\n4. Story ka direction (agla episode kahan jaana chahiye)\n\nHindi mein, 300-400 words. Sirf bible text do.`}]})});
+      const data = await res.json();
+      const bible = data.choices?.[0]?.message?.content?.trim() || '';
+      return bible;
+    } catch { return stateRef.current.seasonBible || ''; }
+  }
+
   // ── Next Episode ───────────────────────────────────
   async function startNextEpisode() {
-    if(playerChunks.length&&activeEp){const{db_saveEpisode}=await import('../../lib/firebase');await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});}
+    setNextEpLoading(true);
+    // Current episode save karo
+    if(playerChunks.length&&activeEp){
+      const{db_saveEpisode}=await import('../../lib/firebase');
+      await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});
+    }
     const epMatch=(activeEp?.epNum||'EP 01').match(/(\d+)/);
     const nextNum='EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
-    const bible=(stateRef.current.seasonBible||'')+'\n\n['+(activeEp?.season||'SEASON 1')+' '+(activeEp?.epNum||'EP 01')+']:\n'+(playerChunks.map(c=>c.text).join('\n\n').slice(0,800))+'...';
+
+    // ── Proper Bible generate karo — saare episodes ka ──
+    toast('📖 Story bible generate ho raha hai...');
+    const freshEps = await (async () => {
+      const { db_getEpisodes } = await import('../../lib/firebase');
+      return await db_getEpisodes(user.uid) || [];
+    })();
+    const bible = await generateSeasonBible(freshEps, playerChunks, activeEp?.epNum||'EP 01');
+
     const newEpId=Date.now().toString();
     const baseTitle=(activeEp?.title||'').split(' | ')[0].trim()||activeEp?.title||'Untitled';
     const season=activeEp?.season||'SEASON 1';
@@ -389,25 +401,82 @@ function MyStoriesPage({ user }) {
     const epFmt=nextNum.replace('EP ','').padStart(2,'0');
     const placeholderTitle=`${baseTitle} | ... | SEASON ${seasonFmt} EP ${epFmt}`;
     const newEp={...activeEp,epNum:nextNum,id:newEpId,title:placeholderTitle,storyChunks:[],ended:false,savedScenes:null,savedChars:null,seasonEnded:false};
-    stateRef.current={...stateRef.current,epNum:nextNum,currentEpId:newEpId,title:placeholderTitle,storyChunks:[],storyEnded:false,savedScenes:null,savedChars:null,seasonBible:bible};
+    stateRef.current={
+      ...stateRef.current,
+      epNum:nextNum, currentEpId:newEpId, title:placeholderTitle,
+      storyChunks:[], storyEnded:false, savedScenes:null, savedChars:null,
+      seasonBible: bible,  // ✅ AI generated proper bible
+      characterBible: stateRef.current.characterBible, // ✅ char status carry forward
+    };
     const{db_saveEpisode}=await import('../../lib/firebase');
-    await db_saveEpisode(user.uid,{...newEp,savedAt:Date.now()});
+    await db_saveEpisode(user.uid,{...newEp,savedAt:Date.now(),seasonBible:bible});
     setActiveEp(newEp);setPlayerChunks([]);setPlayerEnded(false);setShowEndBanner(false);
     setWordCount(0);setScenes(null);setChars(null);setNarration('');setShowNarration(false);
     setExpandedScene(null);setYtMusicVideos([]);setCurrentMusicIdx(0);setPreviewModalVideo(null);
+    setShowNextEpModal(false);
+    setNextEpLoading(false);
     await loadEpisodes(); setScreen('player');
     toast('▶ '+nextNum+' shuru ho raha hai...');
   }
-
+  // ── Season End — pehle rahasya kholne wala finale write karo ──
   async function endSeason() {
-    const{db_saveEpisode}=await import('../../lib/firebase');
-    for(const ep of seasonEps) await db_saveEpisode(user.uid,{...ep,ended:true,seasonEnded:true,savedAt:Date.now()});
-    if(playerChunks.length&&activeEp) await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,seasonEnded:true,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});
-    setActiveEp(prev=>prev?{...prev,seasonEnded:true}:prev);
-    toast('🔒 Season end ho gaya!');
-    await loadEpisodes();
-  }
+    setSeasonFinaleLoading(true);
+    toast('🔮 Season finale likh raha hai — sab rahasya khulenge...');
 
+    const allStoryText = playerChunks.map((c,i)=>`[Part ${i+1}]: ${c.text}`).join('\n\n');
+    const charBible = stateRef.current.characterBible;
+    const charStatus = Array.isArray(charBible) && charBible.length
+      ? charBible.map(c=>`${c.name} (${c.status||'Alive'})`).join(', ')
+      : '';
+    const unresolvedBible = stateRef.current.seasonBible || '';
+
+    try {
+      // ── Step 1: AI se season finale part generate karo ──
+      const res = await fetch('/api/ai', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model:'openai/gpt-4o-mini', max_tokens:700, temperature:0.88, stream:true,
+          messages:[
+            {role:'system', content:'Write ONLY in Hindi Devanagari. Emotion tags allowed: [scared][whisper][shocked][calm]'},
+            {role:'user', content:`Yeh horror story hai:\n\n${allStoryText.slice(0,1500)}\n\n${charStatus?`Characters: ${charStatus}\n\n`:''}${unresolvedBible?`Unresolved mysteries:\n${unresolvedBible.slice(0,400)}\n\n`:''}SEASON FINALE likhao:\n- Saari mysteries RESOLVE karo (koi rahasya mat chhodna)\n- Sabka anjaam batao — kaun bacha, kaun nahi\n- Ek chilling, yaadgaar ending\n- 120-150 words. "समाप्त" se khatam karo.`}
+          ]})});
+
+      const reader=res.body.getReader(), dec=new TextDecoder();
+      let full='';
+      const finaleChunk = {text:'', partNum: playerChunks.length+1, isEnd:true, isFinale:true, streaming:true};
+      setPlayerChunks(prev=>[...prev, finaleChunk]);
+
+      while(true){
+        const {done,value}=await reader.read(); if(done) break;
+        for(const line of dec.decode(value).split('\n')){
+          if(!line.startsWith('data: ')) continue;
+          const d=line.slice(6).trim(); if(d==='[DONE]') break;
+          try{
+            const delta=JSON.parse(d).choices?.[0]?.delta?.content||'';
+            if(delta){ full+=delta; setPlayerChunks(prev=>{const u=[...prev];u[u.length-1]={...u[u.length-1],text:full};return u;}); }
+          }catch{}
+        }
+      }
+
+      if(full.trim()){
+        const finalChunks=[...playerChunks, {text:full.trim(), partNum:playerChunks.length+1, isEnd:true, isFinale:true}];
+        setPlayerChunks(finalChunks);
+        setPlayerEnded(true); setShowEndBanner(true);
+
+        // ── Step 2: Saare episodes season ended mark karo ──
+        const{db_saveEpisode}=await import('../../lib/firebase');
+        for(const ep of seasonEps) await db_saveEpisode(user.uid,{...ep,ended:true,seasonEnded:true,savedAt:Date.now()});
+        await db_saveEpisode(user.uid,{
+          ...activeEp, storyChunks:finalChunks, ended:true, seasonEnded:true,
+          savedAt:Date.now(),
+          savedScenes:stateRef.current.savedScenes||null,
+          savedChars:stateRef.current.savedChars||null
+        });
+        setActiveEp(prev=>prev?{...prev,seasonEnded:true}:prev);
+        toast('🏁 Season complete! Saare rahasya khul gaye!');
+        await loadEpisodes();
+      }
+    } catch(e) { toast('❌ Finale: '+e.message); }
+    setSeasonFinaleLoading(false);
+  }
   async function startNextSeason() {
     const sMatch     = (activeEp?.season||'SEASON 1').match(/(\d+)/);
     const nextSznNum = (sMatch ? parseInt(sMatch[1]) : 1) + 1;
@@ -701,10 +770,18 @@ function MyStoriesPage({ user }) {
                         <div className="end-banner-sub">{activeEp.season} · {activeEp.epNum} complete!</div>
                         {seasonEnded&&<div style={{fontSize:11,color:'#cc6600',background:'rgba(80,30,0,0.15)',border:'1px solid #441100',borderRadius:8,padding:'8px 12px',marginBottom:10}}>🔒 Season complete — editing band hai</div>}
                         <div className="btn-row" style={{flexWrap:'wrap',gap:8}}>
-                          {/* Next Episode — only if season not ended */}
-                          {!seasonEnded&&<button className="btn btn-primary" onClick={startNextEpisode}>▶ Next Episode</button>}
-                          {/* Season End — only if season not ended */}
-                          {!seasonEnded&&<button className="btn btn-ghost" onClick={endSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>🔒 Season End Karo</button>}
+                          {/* Next Episode modal trigger */}
+                          {!seasonEnded&&<button className="btn btn-primary" onClick={()=>setShowNextEpModal(true)}>▶ Next Episode</button>}
+                          {/* Season End — finale AI likhega pehle */}
+                          {!seasonEnded&&(
+                            seasonFinaleLoading
+                              ? <button className="btn btn-ghost" disabled style={{borderColor:'#cc6600',color:'#cc6600',opacity:0.7}}>
+                                  <div className="spinner" style={{display:'inline-block',marginRight:6}}/>Season Finale likh raha hai...
+                                </button>
+                              : <button className="btn btn-ghost" onClick={endSeason} style={{borderColor:'#cc6600',color:'#cc6600'}}>
+                                  🏁 Season End Karo
+                                </button>
+                          )}
                           {/* ── FIXED: Next Season button ── */}
                           {seasonEnded&&(
                             nextSeasonExists
@@ -757,7 +834,7 @@ function MyStoriesPage({ user }) {
                           {[['😱 Tension','Aur tension badhao'],['👻 Creepy','Ek creepy turn'],['👤 Character','Character describe karo'],['🌑 Dark','Atmosphere dark karo'],['💬 Dialog','Dialog likhao'],['⚡ Twist!','Shocking revelation']].map(([l,h])=>(
                             <div key={l} className="action-chip" onClick={()=>setPromptHint(h)}>{l}</div>
                           ))}
-                          <div className="action-chip" style={{borderColor:'#550000',color:'#cc4444'}} onClick={endStoryNow}>🔚 End</div>
+                          <div className="action-chip" style={{borderColor:'#550000',color:'#cc4444'}} onClick={endStoryNow}>🔚 Story End Karo</div>
                         </div>
                         <div className="prompt-row">
                           <textarea className="prompt-input" placeholder="Direction do (optional)..." rows={1} value={promptHint}
@@ -1021,6 +1098,35 @@ function MyStoriesPage({ user }) {
       </div>
 
       {/* ── Preview Modal removed - inline embed used instead ── */}
+
+      {/* ── Next Episode Modal ── */}
+      {showNextEpModal&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{background:'#0d000d',border:'1px solid #550022',borderRadius:16,padding:24,width:'100%',maxWidth:360}}>
+            <div style={{fontSize:16,fontWeight:800,color:'#cc2233',marginBottom:8,textAlign:'center'}}>📖 Next Episode?</div>
+            <div style={{fontSize:13,color:'#888',lineHeight:1.7,marginBottom:16,textAlign:'center'}}>
+              AI abhi saare episodes ka <span style={{color:'#ddd',fontWeight:600}}>Season Bible</span> generate karega — characters ka status, unresolved mysteries, story direction sab track hoga.<br/>
+              <span style={{fontSize:11,color:'#555',marginTop:4,display:'block'}}>Jo character mar gaya woh wapas nahi aayega 👻</span>
+            </div>
+            {nextEpLoading?(
+              <div style={{textAlign:'center',padding:'16px 0',color:'#cc4466',fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                <div className="spinner"/>Bible generate ho rahi hai...
+              </div>
+            ):(
+              <div style={{display:'flex',gap:10}}>
+                <button onClick={()=>setShowNextEpModal(false)}
+                  style={{flex:1,background:'transparent',border:'1px solid #333',color:'#666',padding:'12px',borderRadius:10,fontSize:13,cursor:'pointer',fontWeight:600}}>
+                  ✕ Ruko abhi
+                </button>
+                <button onClick={startNextEpisode}
+                  style={{flex:1,background:'linear-gradient(135deg,#880000,#550000)',border:'1px solid #cc0000',color:'#fff',padding:'12px',borderRadius:10,fontSize:13,cursor:'pointer',fontWeight:700}}>
+                  ▶ Haan, Shuru Karo!
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <BottomNav userInitial={initial}/>
     </>
