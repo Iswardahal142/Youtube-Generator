@@ -743,33 +743,50 @@ function MyStoriesPage({ user }) {
                 const maxEpNum=Math.max(...seasonEps.map(e=>parseInt((e.epNum||'EP 01').match(/\d+/)?.[0]||1)));
                 const isLatestEp=(epNum===maxEpNum);
                 // Show "Start Next Ep" only on latest ended episode where story is not fully over
-                const showStartNextBtn=isLatestEp&&ep.ended&&!ep.storyFullyEnded&&!ep.seasonEnded&&!nextEpExists;
-                const showNextEpLink=isLatestEp&&ep.ended&&!ep.storyFullyEnded&&!ep.seasonEnded&&nextEpExists;
-                return(
-                  <div key={ep.id}
-                    style={{background:isTrending?'rgba(255,60,0,0.05)':'#080008',border:`1px solid ${isTrending?'#661100':'#1a0015'}`,borderRadius:12,padding:14,display:'flex',alignItems:'center',gap:12,position:'relative'}}>
-                    {isTrending&&<div style={{position:'absolute',top:-6,right:10,background:'linear-gradient(135deg,#cc3300,#880000)',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:800,color:'#fff',letterSpacing:1}}>🔥 #1 TRENDING</div>}
-                    <div onClick={()=>openEpisode(ep)} style={{width:40,height:40,borderRadius:10,background:epIsDone?'linear-gradient(135deg,#003300,#001a00)':isTrending?'linear-gradient(135deg,#331100,#1a0800)':'linear-gradient(135deg,#1a0000,#0d0000)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,border:`1px solid ${epIsDone?'#004400':isTrending?'#551100':'#330000'}`,cursor:'pointer'}}>
-                      {isTrending?'🔥':epIsDone?'✅':'📝'}
-                    </div>
-                    <div onClick={()=>openEpisode(ep)} style={{flex:1,minWidth:0,cursor:'pointer'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
-                        <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5,textTransform:'uppercase'}}>{ep.epNum||'EP 01'}</span>
-                        <span style={{fontSize:9,color:epIsDone?'#44bb66':'#cc8822',background:epIsDone?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${epIsDone?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>
-                          {seasonDone?'🔒 Locked':epIsDone?(ep.storyFullyEnded?'Story End':'Done'):'Ongoing'}
-                        </span>
-                      </div>
-                      {(()=>{
-                        const parts=(ep.title||'').split(' | ');
-                        const mainT=parts[0]||'Untitled';
-                        const subT=parts[1]&&parts[1]!=='...'?parts[1]:null;
-                        return(
-                          <>
-                            <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>
-                            {subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>"{subT}"</div>}
-                          </>
-                        );
-                      })()}
+const showStartNextBtn=isLatestEp&&ep.ended&&!ep.storyFullyEnded&&!ep.seasonEnded&&!nextEpExists;
+const showNextEpLink=isLatestEp&&ep.ended&&!ep.storyFullyEnded&&!ep.seasonEnded&&nextEpExists;
+return(
+  <div key={ep.id}
+    style={{background:isTrending?'rgba(255,60,0,0.05)':'#080008',border:`1px solid ${isTrending?'#661100':'#1a0015'}`,borderRadius:12,padding:14,display:'flex',alignItems:'center',gap:12,position:'relative'}}>
+    {isTrending&&<div style={{position:'absolute',top:-6,right:10,background:'linear-gradient(135deg,#cc3300,#880000)',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:800,color:'#fff',letterSpacing:1}}>🔥 #1 TRENDING</div>}
+    <div onClick={()=>openEpisode(ep)} style={{width:40,height:40,borderRadius:10,background:epIsDone?'linear-gradient(135deg,#003300,#001a00)':isTrending?'linear-gradient(135deg,#331100,#1a0800)':'linear-gradient(135deg,#1a0000,#0d0000)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,border:`1px solid ${epIsDone?'#004400':isTrending?'#551100':'#330000'}`,cursor:'pointer'}}>
+      {isTrending?'🔥':epIsDone?'✅':'📝'}
+    </div>
+    <div onClick={()=>openEpisode(ep)} style={{flex:1,minWidth:0,cursor:'pointer'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+        <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5,textTransform:'uppercase'}}>{ep.epNum||'EP 01'}</span>
+        <span style={{fontSize:9,color:epIsDone?'#44bb66':'#cc8822',background:epIsDone?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${epIsDone?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>
+          {seasonDone?'🔒 Locked':epIsDone?(ep.storyFullyEnded?'Story End':'Done'):'Ongoing'}
+        </span>
+      </div>
+      {(()=>{
+        const parts=(ep.title||'').split(' | ');
+        const mainT=parts[0]||'Untitled';
+        const subT=parts[1]&&parts[1]!=='...'?parts[1]:null;
+        return(
+          <>
+            <div style={{fontSize:13,fontWeight:600,color:'#ddd',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mainT}</div>
+            {subT&&<div style={{fontSize:11,color:'#cc4444',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:2,fontStyle:'italic'}}>"{subT}"</div>}
+            {!subT&&ep.ended&&(
+              <button onClick={async e=>{
+                e.stopPropagation();
+                const {db_saveEpisode} = await import('../../lib/firebase');
+                const sub = await generateSubtitle(ep, ep.storyChunks||[]);
+                if(sub){
+                  await db_saveEpisode(user.uid, {...ep, title:sub});
+                  toast('✅ Subtitle generate ho gaya!');
+                  await loadEpisodes();
+                } else {
+                  toast('❌ Subtitle nahi bana');
+                }
+              }}
+              style={{fontSize:10,color:'#cc8844',background:'rgba(80,40,0,0.15)',border:'1px solid #442200',borderRadius:4,padding:'2px 8px',cursor:'pointer',marginTop:2}}>
+                ✏️ Subtitle Generate
+              </button>
+            )}
+          </>
+        );
+      })()}
                       <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
                         <span style={{fontSize:10,color:'#444'}}>{ep.wordCount||0} words</span>
                         {savedDate&&<span style={{fontSize:10,color:'#333'}}>· {savedDate}</span>}
