@@ -4,21 +4,46 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, signOut } from '../lib/firebase';
 
+// ── Firestore mein user settings save/load ──
+async function loadProviderSetting(uid) {
+  try {
+    const { db } = await import('../lib/firebase');
+    const { doc, getDoc } = await import('firebase/firestore');
+    const snap = await getDoc(doc(db, 'users', uid, 'settings', 'app'));
+    return snap.exists() ? (snap.data().apiProvider || 'openrouter') : 'openrouter';
+  } catch { return 'openrouter'; }
+}
+
+async function saveProviderSetting(uid, provider) {
+  try {
+    const { db } = await import('../lib/firebase');
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'users', uid, 'settings', 'app'), { apiProvider: provider }, { merge: true });
+  } catch {}
+}
+
 export default function SideDrawer({ open, onClose, user }) {
   const router = useRouter();
-  const [apiProvider, setApiProvider] = useState('openrouter'); // 'openrouter' | 'gemini'
+  const [apiProvider, setApiProvider] = useState('openrouter');
+  const [providerLoading, setProviderLoading] = useState(false);
 
-  // Load saved preference
+  // Firestore se load karo
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('kr_api_provider');
-      if (saved === 'gemini' || saved === 'openrouter') setApiProvider(saved);
-    } catch {}
-  }, []);
+    if (!user?.uid) return;
+    loadProviderSetting(user.uid).then(p => {
+      setApiProvider(p);
+      // window pe bhi set karo taaki fetch calls use kar sakein
+      if (typeof window !== 'undefined') window.__aiProvider = p;
+    });
+  }, [user?.uid]);
 
-  function toggleProvider(val) {
+  async function toggleProvider(val) {
+    if (val === apiProvider || providerLoading) return;
+    setProviderLoading(true);
     setApiProvider(val);
-    try { localStorage.setItem('kr_api_provider', val); } catch {}
+    if (typeof window !== 'undefined') window.__aiProvider = val;
+    await saveProviderSetting(user?.uid, val);
+    setProviderLoading(false);
   }
 
   // Close on ESC
@@ -31,10 +56,7 @@ export default function SideDrawer({ open, onClose, user }) {
   // Swipe-to-open (left edge drag)
   useEffect(() => {
     let startX = 0, startY = 0;
-    const onStart = (e) => {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-    };
+    const onStart = (e) => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; };
     const onEnd = (e) => {
       const dx = e.changedTouches[0].clientX - startX;
       const dy = Math.abs(e.changedTouches[0].clientY - startY);
@@ -65,20 +87,13 @@ export default function SideDrawer({ open, onClose, user }) {
     <>
       {/* Overlay */}
       {open && (
-        <div
-          onClick={onClose}
-          style={{
-            position:'fixed', inset:0, zIndex:1100,
-            background:'rgba(0,0,0,0.6)', backdropFilter:'blur(2px)',
-          }}
-        />
+        <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:1100, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(2px)' }} />
       )}
 
       {/* Drawer */}
       <div style={{
-        position:'fixed', top:0, left:0, bottom:0, width:270,
-        zIndex:1200, background:'#0d000d',
-        borderRight:'1px solid #2a0022',
+        position:'fixed', top:0, left:0, bottom:0, width:270, zIndex:1200,
+        background:'#0d000d', borderRight:'1px solid #2a0022',
         display:'flex', flexDirection:'column',
         transform: open ? 'translateX(0)' : 'translateX(-100%)',
         transition:'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
@@ -104,90 +119,83 @@ export default function SideDrawer({ open, onClose, user }) {
           </div>
         </div>
 
-        <div style={{ height:1, background:'#1a0015', margin:'4px 0' }} />
+        <div style={{ height:1, background:'#1a0015' }} />
 
         {/* Nav */}
-        <nav style={{ display:'flex', flexDirection:'column', padding:8, gap:2, flex:1 }}>
+        <nav style={{ display:'flex', flexDirection:'column', padding:8, gap:2, flex:1, overflowY:'auto' }}>
           {[
             { icon:'✍️', label:'Generate Story', path:'/generate' },
             { icon:'📚', label:'My Stories',     path:'/my-stories' },
             { icon:'▶',  label:'YouTube Export', path:'/youtube', iconStyle:{ color:'#ff4444' } },
           ].map(item => (
-            <button
-              key={item.path}
-              onClick={() => go(item.path)}
-              style={{ display:'flex', alignItems:'center', gap:12, background:'none', border:'none', color:'#888', fontSize:14, fontFamily:"'Noto Sans Devanagari', sans-serif", padding:'12px 14px', borderRadius:10, cursor:'pointer', textAlign:'left' }}
-            >
+            <button key={item.path} onClick={() => go(item.path)}
+              style={{ display:'flex', alignItems:'center', gap:12, background:'none', border:'none', color:'#888', fontSize:14, fontFamily:"'Noto Sans Devanagari', sans-serif", padding:'12px 14px', borderRadius:10, cursor:'pointer', textAlign:'left' }}>
               <span style={item.iconStyle}>{item.icon}</span> {item.label}
             </button>
           ))}
 
           {/* ── AI Provider Toggle ── */}
-          <div style={{ margin:'12px 6px 0', background:'#0a000a', border:'1px solid #2a0020', borderRadius:12, padding:'12px 14px' }}>
-            <div style={{ fontSize:10, color:'#550033', letterSpacing:1.5, textTransform:'uppercase', fontWeight:700, marginBottom:10 }}>⚡ AI Provider</div>
+          <div style={{ margin:'10px 6px 0', background:'#0a000a', border:'1px solid #1a0018', borderRadius:12, padding:'12px 12px' }}>
+            <div style={{ fontSize:10, color:'#660033', letterSpacing:1.5, textTransform:'uppercase', fontWeight:700, marginBottom:10 }}>
+              ⚡ AI Provider {providerLoading && <span style={{color:'#444',fontWeight:400}}>saving...</span>}
+            </div>
 
-            {/* OpenRouter */}
-            <div
-              onClick={() => toggleProvider('openrouter')}
-              style={{
-                display:'flex', alignItems:'center', gap:10,
-                padding:'9px 10px', borderRadius:8, marginBottom:6,
-                cursor:'pointer',
-                background: apiProvider==='openrouter' ? 'rgba(136,0,34,0.18)' : 'transparent',
-                border: `1px solid ${apiProvider==='openrouter' ? '#880022' : '#1a0015'}`,
-                transition:'all 0.2s',
-              }}
-            >
+            {/* OpenRouter option */}
+            <div onClick={() => toggleProvider('openrouter')} style={{
+              display:'flex', alignItems:'center', gap:10, padding:'10px 10px',
+              borderRadius:9, marginBottom:7, cursor:'pointer',
+              background: apiProvider==='openrouter' ? 'rgba(150,0,40,0.15)' : 'rgba(255,255,255,0.02)',
+              border: `1px solid ${apiProvider==='openrouter' ? '#770022' : '#1a0012'}`,
+              transition:'all 0.18s',
+            }}>
               <div style={{
-                width:14, height:14, borderRadius:'50%', flexShrink:0,
+                width:16, height:16, borderRadius:'50%', flexShrink:0,
                 background: apiProvider==='openrouter' ? '#cc2244' : 'transparent',
-                border: `2px solid ${apiProvider==='openrouter' ? '#cc2244' : '#444'}`,
-                transition:'all 0.2s',
+                border: `2px solid ${apiProvider==='openrouter' ? '#cc2244' : '#333'}`,
+                boxShadow: apiProvider==='openrouter' ? '0 0 6px rgba(200,30,60,0.5)' : 'none',
+                transition:'all 0.18s',
               }}/>
-              <div>
-                <div style={{ fontSize:12, fontWeight:700, color: apiProvider==='openrouter' ? '#ddd' : '#666' }}>OpenRouter</div>
-                <div style={{ fontSize:10, color:'#444' }}>GPT-4o-mini · Credits needed</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:12, fontWeight:700, color: apiProvider==='openrouter' ? '#eee' : '#555' }}>OpenRouter</div>
+                <div style={{ fontSize:10, color:'#444', marginTop:1 }}>GPT-4o-mini · Paid credits</div>
               </div>
+              {apiProvider==='openrouter' && <span style={{fontSize:9,color:'#cc2244',fontWeight:800}}>ACTIVE</span>}
             </div>
 
-            {/* Gemini */}
-            <div
-              onClick={() => toggleProvider('gemini')}
-              style={{
-                display:'flex', alignItems:'center', gap:10,
-                padding:'9px 10px', borderRadius:8,
-                cursor:'pointer',
-                background: apiProvider==='gemini' ? 'rgba(0,100,80,0.18)' : 'transparent',
-                border: `1px solid ${apiProvider==='gemini' ? '#006644' : '#1a0015'}`,
-                transition:'all 0.2s',
-              }}
-            >
+            {/* Gemini option */}
+            <div onClick={() => toggleProvider('gemini')} style={{
+              display:'flex', alignItems:'center', gap:10, padding:'10px 10px',
+              borderRadius:9, cursor:'pointer',
+              background: apiProvider==='gemini' ? 'rgba(0,120,80,0.15)' : 'rgba(255,255,255,0.02)',
+              border: `1px solid ${apiProvider==='gemini' ? '#006644' : '#1a0012'}`,
+              transition:'all 0.18s',
+            }}>
               <div style={{
-                width:14, height:14, borderRadius:'50%', flexShrink:0,
-                background: apiProvider==='gemini' ? '#00aa77' : 'transparent',
-                border: `2px solid ${apiProvider==='gemini' ? '#00aa77' : '#444'}`,
-                transition:'all 0.2s',
+                width:16, height:16, borderRadius:'50%', flexShrink:0,
+                background: apiProvider==='gemini' ? '#00bb88' : 'transparent',
+                border: `2px solid ${apiProvider==='gemini' ? '#00bb88' : '#333'}`,
+                boxShadow: apiProvider==='gemini' ? '0 0 6px rgba(0,180,120,0.5)' : 'none',
+                transition:'all 0.18s',
               }}/>
-              <div>
-                <div style={{ fontSize:12, fontWeight:700, color: apiProvider==='gemini' ? '#ddd' : '#666' }}>Google Gemini</div>
-                <div style={{ fontSize:10, color:'#444' }}>gemini-2.0-flash · Free</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:12, fontWeight:700, color: apiProvider==='gemini' ? '#eee' : '#555' }}>Google Gemini</div>
+                <div style={{ fontSize:10, color:'#444', marginTop:1 }}>gemini-2.0-flash · Free ✨</div>
               </div>
+              {apiProvider==='gemini' && <span style={{fontSize:9,color:'#00bb88',fontWeight:800}}>ACTIVE</span>}
             </div>
 
-            <div style={{ fontSize:9, color:'#333', marginTop:8, textAlign:'center' }}>
-              {apiProvider==='gemini' ? '✅ Gemini active — free hai!' : '⚠️ OpenRouter — credits chahiye'}
+            <div style={{ fontSize:9, color: apiProvider==='gemini' ? '#005533' : '#330011', marginTop:8, textAlign:'center', padding:'4px 0' }}>
+              {apiProvider==='gemini' ? '✅ Free Gemini use ho raha hai' : '⚠️ Credits khatam toh Gemini switch karo'}
             </div>
           </div>
         </nav>
 
-        <div style={{ height:1, background:'#1a0015', margin:'4px 0' }} />
+        <div style={{ height:1, background:'#1a0015' }} />
 
         {/* Footer */}
-        <div style={{ padding:'12px 16px 24px', display:'flex', flexDirection:'column', gap:8, borderTop:'1px solid #1a0015' }}>
-          <button
-            onClick={logout}
-            style={{ background:'#1a0008', border:'1px solid #440022', color:'#cc4455', padding:'10px 16px', borderRadius:10, fontSize:13, cursor:'pointer', fontFamily:"'Noto Sans Devanagari', sans-serif", textAlign:'left' }}
-          >
+        <div style={{ padding:'12px 16px 24px', display:'flex', flexDirection:'column', gap:8 }}>
+          <button onClick={logout}
+            style={{ background:'#1a0008', border:'1px solid #440022', color:'#cc4455', padding:'10px 16px', borderRadius:10, fontSize:13, cursor:'pointer', fontFamily:"'Noto Sans Devanagari', sans-serif", textAlign:'left' }}>
             🚪 Logout
           </button>
           <div style={{ fontSize:10, color:'#2a2a2a', textAlign:'center' }}>Kaali Raat v1.0</div>
