@@ -237,6 +237,7 @@ function YoutubePage({ user }) {
   async function enhanceThumbPrompt() {
     const chunks = lastEp?.storyChunks || [];
     const base = thumbInput.trim() || chunks.map(c=>c.text).join(' ').slice(0,300);
+    toast('Debug: base length = ' + base.length + ', chunks = ' + chunks.length);
     if (!base) { toast('⚠️ Koi prompt likho ya pehle story complete karo!'); return; }
     setThumbLoading(true); setThumbResult('');
     try {
