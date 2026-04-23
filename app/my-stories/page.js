@@ -234,11 +234,12 @@ function MyStoriesPage({ user }) {
     setScreen('player');
   }
 
-  async function saveEpisode(chunks, ended) {
+  async function saveEpisode(chunks, ended, storyFullyEnded) {
     if (!chunks.length || !activeEp) return;
-    // Agar episode already ended hai toh ended:false se overwrite mat karo
+    // ended ko NEVER false se overwrite karo agar already true hai
     const finalEnded = ended || activeEp.ended || false;
-    const finalStoryFullyEnded = activeEp.storyFullyEnded || false;
+    // storyFullyEnded — parameter > activeEp > false
+    const finalStoryFullyEnded = (storyFullyEnded !== undefined) ? storyFullyEnded : (activeEp.storyFullyEnded || false);
     const ep = {
       ...activeEp, storyChunks: chunks,
       wordCount: chunks.reduce((a,c)=>a+c.text.split(/\s+/).length,0),
@@ -382,7 +383,7 @@ function MyStoriesPage({ user }) {
       const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:3000,temperature:0.35,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}":\n\n${storyText}\n\n${charList?`Story ke characters: ${charList}\n\n`:''}MINIMUM 15 SCENES. Har scene ke liye:\n\nSCENE_START\nnum: [number]\ntitle: [Hindi title]\nlocation: [location]\nmood: [Daravna/Suspenseful/Intense/Creepy/Shocking]\nwhat: [kya hua — 1 line Hindi]\nchars_in_scene: [comma separated character names jo is scene mein hain]\nimgprompt: [English — cinematic webtoon 2D flat illustration, clean lineart. Dark horror atmosphere. 50-70 words.]\nSCENE_END\n\nSirf format.`}]})});
       const data=await res.json();
       const parsed=parseScenes(data.choices?.[0]?.message?.content||'');
-      if(parsed.length){setScenes(parsed);stateRef.current.savedScenes=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} scenes ready!`);}
+      if(parsed.length){setScenes(parsed);stateRef.current.savedScenes=parsed;saveEpisode(playerChunks,true);toast(`✅ ${parsed.length} scenes ready!`);}
     }catch(e){toast('❌ Scenes: '+e.message);}
     setScenesLoading(false);
   }
@@ -402,7 +403,7 @@ function MyStoriesPage({ user }) {
       const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openai/gpt-4o-mini',max_tokens:1500,temperature:0.3,messages:[{role:'user',content:`Story: "${stateRef.current.title||''}"\n\n${storyText}\n\nIs story ke SAARE characters identify karo.\n\n[{"name":"naam","role":"Hero/Villain/Supporting/Minor","desc":"2-3 lines Hindi mein","visual":"English: age, height, build, face, hair, eye color, skin, clothing. 30-40 words.","appear":"Kis part mein aaya"}]\n\nSirf JSON array.`}]})});
       const data=await res.json();
       const parsed=JSON.parse((data.choices?.[0]?.message?.content?.trim()||'[]').replace(/```json|```/g,'').trim());
-      if(Array.isArray(parsed)&&parsed.length){setChars(parsed);stateRef.current.savedChars=parsed;stateRef.current.characterBible=parsed;saveEpisode(playerChunks,playerEnded);toast(`✅ ${parsed.length} characters ready!`);}
+      if(Array.isArray(parsed)&&parsed.length){setChars(parsed);stateRef.current.savedChars=parsed;stateRef.current.characterBible=parsed;saveEpisode(playerChunks,true);toast(`✅ ${parsed.length} characters ready!`);}
     }catch(e){toast('❌ Characters: '+e.message);}
     setCharsLoading(false);
   }
@@ -427,7 +428,7 @@ function MyStoriesPage({ user }) {
     setNextEpLoading(true);
     if(playerChunks.length&&activeEp){
       const{db_saveEpisode}=await import('../../lib/firebase');
-      await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,storyFullyEnded:false,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});
+      await db_saveEpisode(user.uid,{...activeEp,storyChunks:playerChunks,ended:true,storyFullyEnded:activeEp.storyFullyEnded||false,savedAt:Date.now(),savedScenes:stateRef.current.savedScenes||null,savedChars:stateRef.current.savedChars||null});
     }
     const epMatch=(activeEp?.epNum||'EP 01').match(/(\d+)/);
     const nextNum='EP '+String((epMatch?parseInt(epMatch[1]):1)+1).padStart(2,'0');
