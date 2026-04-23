@@ -123,6 +123,23 @@ function MyStoriesPage({ user }) {
     });
     setGroups(g);
     setLoading(false);
+    // Agar player open hai toh activeEp ko bhi fresh data se update karo
+    setActiveEp(prev => {
+      if (!prev) return prev;
+      const fresh = eps?.find(e => e.id === prev.id);
+      if (!fresh) return prev;
+      // ended/storyFullyEnded update karo — baki UI state mat chhuao
+      return { ...prev, ended: fresh.ended, storyFullyEnded: fresh.storyFullyEnded, title: fresh.title || prev.title };
+    });
+    // seasonEps bhi update karo
+    setSeasonEps(prev => {
+      if (!prev.length) return prev;
+      return prev.map(ep => {
+        const fresh = eps?.find(e => e.id === ep.id);
+        return fresh ? { ...ep, ended: fresh.ended, storyFullyEnded: fresh.storyFullyEnded } : ep;
+      });
+    });
+    return eps;
   }
 
   useEffect(() => {
@@ -182,35 +199,52 @@ function MyStoriesPage({ user }) {
     await loadEpisodes(); setScreen('stories');
   }
 
-  function openEpisode(ep) {
+  async function openEpisode(epInput) {
+    // Firestore se fresh episode data fetch karo — stale local state avoid karne ke liye
+    let ep = epInput;
+    try {
+      const { db_getEpisodes } = await import('../../lib/firebase');
+      const freshEps = await db_getEpisodes(user.uid);
+      const fresh = freshEps?.find(e => e.id === epInput.id);
+      if (fresh) ep = fresh;
+    } catch {}
+
     const seasonEnded = seasonEps.every(e => e.ended&&e.seasonEnded);
     setActiveEp({ ...ep, seasonEnded });
     setPlayerChunks(ep.storyChunks || []);
     setPlayerEnded(ep.ended || false);
     setShowEndBanner(ep.ended || false);
-    // Restore epEndType from saved flag
-    if(ep.ended) setEpEndType(ep.storyFullyEnded?'story':'episode');
+    // epEndType — Firestore ke ended/storyFullyEnded se restore karo
+    if(ep.ended) setEpEndType(ep.storyFullyEnded ? 'story' : 'episode');
     else setEpEndType(null);
     setWordCount((ep.storyChunks||[]).reduce((a,c)=>a+c.text.split(/\s+/).length,0));
     setScenes(ep.savedScenes || null);
     setChars(ep.savedChars || null);
     setShowAnalysis(false);
     setExpandedScene(null);
+    setNarration(ep.savedNarration || '');
+    setShowNarration(false);
     setYtMusicVideos([]); setCurrentMusicIdx(0); setPreviewModalVideo(null);
     stateRef.current = {
       title: ep.title, season: ep.season||'SEASON 1', epNum: ep.epNum||'EP 01',
       currentEpId: ep.id, prompt: ep.prompt||'', seasonBible: ep.seasonBible||null,
       characterBible: ep.characterBible||null, savedChars: ep.savedChars||null,
+      savedScenes: ep.savedScenes||null,
     };
     setScreen('player');
   }
 
   async function saveEpisode(chunks, ended) {
     if (!chunks.length || !activeEp) return;
+    // Agar episode already ended hai toh ended:false se overwrite mat karo
+    const finalEnded = ended || activeEp.ended || false;
+    const finalStoryFullyEnded = activeEp.storyFullyEnded || false;
     const ep = {
       ...activeEp, storyChunks: chunks,
       wordCount: chunks.reduce((a,c)=>a+c.text.split(/\s+/).length,0),
-      ended, savedAt: Date.now(),
+      ended: finalEnded,
+      storyFullyEnded: finalStoryFullyEnded,
+      savedAt: Date.now(),
       savedScenes: stateRef.current.savedScenes||null,
       savedChars: stateRef.current.savedChars||null,
     };
@@ -244,7 +278,7 @@ function MyStoriesPage({ user }) {
           try{const delta=JSON.parse(d).choices?.[0]?.delta?.content||'';if(delta){full+=delta;setPlayerChunks(prev=>{const u=[...prev];u[u.length-1]={...u[u.length-1],text:full};return u;});scrollBottom();}}catch{}
         }
       }
-      if(full.trim()){const final=[...chunks,{text:full.trim(),partNum}];setPlayerChunks(final);setWordCount(final.reduce((a,c)=>a+c.text.split(/\s+/).length,0));saveEpisode(final,false);}
+      if(full.trim()){const final=[...chunks,{text:full.trim(),partNum}];setPlayerChunks(final);setWordCount(final.reduce((a,c)=>a+c.text.split(/\s+/).length,0));if(!activeEp?.ended)saveEpisode(final,false);}
     } catch(e){setPlayerChunks(chunks);toast('❌ '+e.message);}
     isGenRef.current=false; setIsGenerating(false); scrollBottom();
   }
@@ -698,6 +732,8 @@ function MyStoriesPage({ user }) {
                 const ytInfo=getEpYtInfo(ep);
                 const isTrending=ytInfo&&ytInfo.rank===1;
                 const seasonDone=seasonEps.every(e=>e.ended&&e.seasonEnded);
+                // Use fresh ep.ended from Firestore (not stale state)
+                const epIsDone=ep.ended||false;
                 // Find the next episode if it already exists
                 const epNum=parseInt((ep.epNum||'EP 01').match(/\d+/)?.[0]||1);
                 const nextEpStr='EP '+String(epNum+1).padStart(2,'0');
@@ -712,14 +748,14 @@ function MyStoriesPage({ user }) {
                   <div key={ep.id}
                     style={{background:isTrending?'rgba(255,60,0,0.05)':'#080008',border:`1px solid ${isTrending?'#661100':'#1a0015'}`,borderRadius:12,padding:14,display:'flex',alignItems:'center',gap:12,position:'relative'}}>
                     {isTrending&&<div style={{position:'absolute',top:-6,right:10,background:'linear-gradient(135deg,#cc3300,#880000)',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:800,color:'#fff',letterSpacing:1}}>🔥 #1 TRENDING</div>}
-                    <div onClick={()=>openEpisode(ep)} style={{width:40,height:40,borderRadius:10,background:ep.ended?'linear-gradient(135deg,#003300,#001a00)':isTrending?'linear-gradient(135deg,#331100,#1a0800)':'linear-gradient(135deg,#1a0000,#0d0000)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,border:`1px solid ${ep.ended?'#004400':isTrending?'#551100':'#330000'}`,cursor:'pointer'}}>
-                      {isTrending?'🔥':ep.ended?'✅':'📝'}
+                    <div onClick={()=>openEpisode(ep)} style={{width:40,height:40,borderRadius:10,background:epIsDone?'linear-gradient(135deg,#003300,#001a00)':isTrending?'linear-gradient(135deg,#331100,#1a0800)':'linear-gradient(135deg,#1a0000,#0d0000)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,border:`1px solid ${epIsDone?'#004400':isTrending?'#551100':'#330000'}`,cursor:'pointer'}}>
+                      {isTrending?'🔥':epIsDone?'✅':'📝'}
                     </div>
                     <div onClick={()=>openEpisode(ep)} style={{flex:1,minWidth:0,cursor:'pointer'}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
                         <span style={{fontSize:9,color:'#880000',fontWeight:800,letterSpacing:1.5,textTransform:'uppercase'}}>{ep.epNum||'EP 01'}</span>
-                        <span style={{fontSize:9,color:ep.ended?'#44bb66':'#cc8822',background:ep.ended?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${ep.ended?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>
-                          {seasonDone?'🔒 Locked':ep.ended?(ep.storyFullyEnded?'Story End':'Done'):'Ongoing'}
+                        <span style={{fontSize:9,color:epIsDone?'#44bb66':'#cc8822',background:epIsDone?'rgba(0,80,0,0.12)':'rgba(80,40,0,0.12)',border:`1px solid ${epIsDone?'#1a4a22':'#3a2200'}`,borderRadius:3,padding:'1px 5px'}}>
+                          {seasonDone?'🔒 Locked':epIsDone?(ep.storyFullyEnded?'Story End':'Done'):'Ongoing'}
                         </span>
                       </div>
                       {(()=>{
