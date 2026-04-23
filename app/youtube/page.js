@@ -237,7 +237,6 @@ function YoutubePage({ user }) {
   async function enhanceThumbPrompt() {
     const chunks = lastEp?.storyChunks || [];
     const base = thumbInput.trim() || chunks.map(c=>c.text).join(' ').slice(0,300);
-    toast('Debug: base length = ' + base.length + ', chunks = ' + chunks.length);
     if (!base) { toast('⚠️ Koi prompt likho ya pehle story complete karo!'); return; }
     setThumbLoading(true); setThumbResult('');
     try {
@@ -248,9 +247,10 @@ function YoutubePage({ user }) {
         }),
       });
       const data = await res.json();
+      toast('❌ Response: ' + JSON.stringify(data).slice(0,100));
       const result = data.choices?.[0]?.message?.content?.trim()||'';
       if (result) setThumbResult(result);
-      else toast('⚠️ Result nahi aaya, dobara try karo');
+      else toast('⚠️ Result nahi aaya: ' + JSON.stringify(data).slice(0,80));
     } catch(e) { toast('❌ '+e.message); }
     setThumbLoading(false);
   }
