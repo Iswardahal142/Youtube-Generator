@@ -171,26 +171,6 @@ function YoutubePage({ user }) {
   setTitlesLoading(false);
 }
 
-async function generateYtDesc() {
-  const ep = lastEp;
-  if (!ep || !ep.storyChunks?.length) { toast('⚠️ Pehle story complete karo!'); return; }
-  setDescLoading(true); setDesc('');
-  const title = (ep.title||'').split(' | ')[0] || ep.title || '';
-  const epNum = ep.epNum || 'EP 01';
-  const season = ep.season || 'SEASON 1';
-  const storyText = ep.storyChunks.map(c=>c.text).join('\n\n').slice(0,800);
-  try {
-    const res = await fetch('/api/ai',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:800, temperature:0.7,
-        messages:[{ role:'user', content:`Story: "${title}" — ${season} ${epNum}\n\n${storyText}\n\nIs YouTube video ke liye Hindi description + hashtags banao.\n\nFormat:\n- 3-4 para Hindi description (mystery/horror hook)\n- Subscribe CTA\n- 15-20 relevant hashtags\n\nSEO optimized. Ready-to-paste.` }],
-      }),
-    });
-    const data = await res.json();
-    setDesc(data.choices?.[0]?.message?.content?.trim()||'');
-  } catch(e) { toast('❌ '+e.message); }
-  setDescLoading(false);
-}
 
   // Show next title
   function nextTitle() {
