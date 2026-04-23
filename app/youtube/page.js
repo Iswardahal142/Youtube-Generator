@@ -101,7 +101,10 @@ function YoutubePage({ user }) {
       const eps = await db_getEpisodes(user.uid);
       if (eps?.length) {
         const sorted = [...eps].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
-        setLastEp(sorted[0]);
+        const latest = sorted[0];
+        setLastEp(latest);
+        if (latest.ytTitle) setSelectedTitle(latest.ytTitle);
+        if (latest.ytDesc)  setDesc(latest.ytDesc);
       }
     });
 
@@ -235,7 +238,13 @@ async function generateYtDesc() {
         }),
       });
       const data = await res.json();
-      setDesc(data.choices?.[0]?.message?.content?.trim()||'');
+      const generatedDesc = data.choices?.[0]?.message?.content?.trim()||'';
+      setDesc(generatedDesc);
+      if (generatedDesc && lastEp) {
+        const { db_saveEpisode } = await import('../../lib/firebase');
+        await db_saveEpisode(user.uid, { ...lastEp, ytDesc: generatedDesc, savedAt: Date.now() });
+        setLastEp(prev => prev ? { ...prev, ytDesc: generatedDesc } : prev);
+      }
     } catch(e) { toast('❌ '+e.message); }
     setDescLoading(false);
   }
