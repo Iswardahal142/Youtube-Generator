@@ -103,8 +103,12 @@ function YoutubePage({ user }) {
         const sorted = [...eps].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
         const latest = sorted[0];
         setLastEp(latest);
-        if (latest.ytTitle) setSelectedTitle(latest.ytTitle);
-        if (latest.ytDesc)  setDesc(latest.ytDesc);
+        if (latest.ytTitle) {
+          setSelectedTitle(latest.ytTitle);
+          setGeneratedTitles([latest.ytTitle]);
+          setCurrentTitleIdx(0);
+        }
+        if (latest.ytDesc) setDesc(latest.ytDesc);
       }
     });
 
