@@ -139,13 +139,42 @@ function GeneratePage({ user }) {
     const topVideoHint = topVid
       ? `\n\nCHANNEL KA TOP PERFORMING VIDEO (most views — ${(topVid.viewCount||0).toLocaleString()} views):\nTitle: "${topVid.title}"\nDescription: "${(topVid.description||'').slice(0,200)}"\n\nIs video ki THEME aur NICHE se inspired story banao — same direction mein jao jo channel pe already viral hai. Copy mat karo, but usi horror niche ko pakdo.`
       : '';
+
+    // ── Existing saved titles collect karo — duplicate avoid karne ke liye ──
+    let existingTitles = '';
+    try {
+      const { db_getEpisodes } = await import('../../lib/firebase');
+      const eps = await db_getEpisodes(user.uid);
+      if (eps?.length) {
+        const titles = [...new Set(eps.map(e => (e.title||'').split(' | ')[0].trim()).filter(Boolean))];
+        if (titles.length) existingTitles = `\n\nIN TITLES JAISI STORY MAT BANAO (already exist hain):\n${titles.map(t=>`- ${t}`).join('\n')}`;
+      }
+    } catch {}
+
+    // ── Random variety seed — har baar alag story type ──
+    const varietySeeds = [
+      'Ek purani haveli mein ek akela insaan, jahan deewarein kuch kehti hain',
+      'Ek jungle mein khoye hue log, raat ko kuch unka peecha karta hai',
+      'Highway pe ek hitchhiker, jo woh nahi jab tak tum samjho',
+      'Ek school ke basement mein dabi hui kahani, decades baad jaag uthi',
+      'Ek gaon jo sirf raat ko exists karta hai, din mein koi nahi milta',
+      'Ek ghar jo apne rehne walon ko kabhi jane nahi deta',
+      'Ek aurat jo marne ke baad bhi apne bacchon ki raksha karti hai',
+      'Ek doctor jo mrit logo ki awaazein sunne lagta hai',
+      'Ek puraani photo jo har raat change hoti hai',
+      'Ek train jo ek aisi jagah rukti hai jo maps pe nahi hai',
+      'Ek bache ki drawing mein wo cheez jo woh kabhi dekh nahi sakta tha',
+      'Ek kuan jisme se sirf khud ki awaaz wapas aati hai — lekin alag',
+    ];
+    const randomSeed = varietySeeds[Math.floor(Math.random() * varietySeeds.length)];
+
     try {
       const res = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
-          model:'openai/gpt-4o-mini', max_tokens:400, temperature:0.95,
+          model:'openai/gpt-4o-mini', max_tokens:400, temperature:0.97,
           messages:[{ role:'user',
-            content:`You are a Hindi horror story title generator.\n\nGenre/Setting: ${genreHint}${topVideoHint}\n\nSTRICT RULES:\n- Title MUST be in Hindi Devanagari script only.\n- Title must be 3-6 Hindi words. NO English words.\n- Plot: 3-4 sentences in Hindi Devanagari.\n\nRespond ONLY in JSON:\n{"title":"हिंदी शीर्षक","plot":"हिंदी में कहानी का विचार"}`
+            content:`You are a Hindi horror story title generator.\n\nGenre/Setting: ${genreHint}${topVideoHint}${existingTitles}\n\nINSPIRATION SEED (isse seedha copy mat karo, sirf direction le): "${randomSeed}"\n\nSTRICT RULES:\n- Title MUST be in Hindi Devanagari script only.\n- Title must be 3-6 Hindi words. NO English words.\n- Plot: 3-4 sentences in Hindi Devanagari.\n- Har baar NAYA aur ALAG angle lo — clichéd setups avoid karo.\n- Protagonist alag ho, villain/threat alag ho, setting fresh ho.\n\nRespond ONLY in JSON:\n{"title":"हिंदी शीर्षक","plot":"हिंदी में कहानी का विचार"}`
           }],
         }),
       });
@@ -171,13 +200,19 @@ function GeneratePage({ user }) {
       characterBible:null, savedNarration:null, ytTitle:null, ytDesc:null,
     };
     stateRef.current = newState;
-    setSeason('SEASON 1'); setEpNum('EP 01'); setTitle(genTitle);
-    setCurrentEpId(newEpId); setStoryChunks([]); setStoryEnded(false);
-    setShowEndBanner(false); setWordCount(0);
-    setScenes(null); setChars(null); setNarration('');
     saveState(newState);
-    setScreen('story');
-    setTimeout(()=>sendContinue(true,[],genTitle,genPrompt,'SEASON 1','EP 01',newEpId),100);
+    // Firestore mein episode save karo (empty — My Stories pe generate hoga)
+    try {
+      const { db_saveEpisode } = await import('../../lib/firebase');
+      await db_saveEpisode(user.uid, {
+        id: newEpId, epNum: 'EP 01', season: 'SEASON 1',
+        title: genTitle, wordCount: 0, ended: false,
+        savedAt: Date.now(), storyChunks: [], prompt: genPrompt,
+        savedScenes: null, savedChars: null, savedNarration: null,
+      });
+    } catch(err) { toast('❌ Save failed: '+err.message); return; }
+    // My Stories pe bhejo — wahan generate hoga
+    router.push('/my-stories?openEp=' + newEpId);
   }
 
   // ── Next Episode ──────────────────────────────────
