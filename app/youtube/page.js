@@ -139,29 +139,51 @@ function YoutubePage({ user }) {
 
   // ── Titles — single generate flow ─────────────────
   async function generateYtTitles() {
-    const { chunks, title, epNum, season } = storyRef.current;
-    if (!chunks.length) { toast('⚠️ Pehle story complete karo!'); return; }
-    setTitlesLoading(true);
-    setGeneratedTitles([]);
-    setCurrentTitleIdx(0);
-    const storyText = chunks.map(c=>c.text).join('\n\n').slice(0,1200);
-    try {
-      const res  = await fetch('/api/ai',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:600, temperature:0.9,
-          messages:[{ role:'user', content:`Tu ek viral Hindi YouTube horror channel ka title expert hai.\n\nStory Title: "${title}"\nStory Summary: ${storyText.slice(0,600)}\n\nIske liye 7 VIRAL YouTube episode titles banao. Rules:\n- PURE HINDI DEVANAGARI script mein\n- High CTR — suspense, curiosity, fear\n- Mix: question format, shocking statement, cliffhanger\n- 50-70 characters each\n- Sirf episode ka catchy title banao — story ka main title aur season/episode number MAT likhna, woh alag se add hoga\n\nSirf JSON array return karo:\n["title 1","title 2","title 3","title 4","title 5","title 6","title 7"]` }],
-        }),
-      });
-      const data   = await res.json();
-      const raw    = data.choices?.[0]?.message?.content?.trim()||'[]';
-      const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
-      if (Array.isArray(parsed) && parsed.length) {
-        setGeneratedTitles(parsed);
-        setCurrentTitleIdx(0);
-      }
-    } catch(e) { toast('❌ '+e.message); }
-    setTitlesLoading(false);
-  }
+  const ep = lastEp;
+  if (!ep || !ep.storyChunks?.length) { toast('⚠️ Pehle story complete karo!'); return; }
+  setTitlesLoading(true);
+  setGeneratedTitles([]);
+  setCurrentTitleIdx(0);
+  const title = (ep.title||'').split(' | ')[0] || ep.title || '';
+  const storyText = ep.storyChunks.map(c=>c.text).join('\n\n').slice(0,1200);
+  try {
+    const res = await fetch('/api/ai',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:600, temperature:0.9,
+        messages:[{ role:'user', content:`Tu ek viral Hindi YouTube horror channel ka title expert hai.\n\nStory Title: "${title}"\nStory Summary: ${storyText.slice(0,600)}\n\nIske liye 7 VIRAL YouTube episode titles banao. Rules:\n- PURE HINDI DEVANAGARI script mein\n- High CTR — suspense, curiosity, fear\n- Mix: question format, shocking statement, cliffhanger\n- 50-70 characters each\n- Sirf episode ka catchy title banao — story ka main title aur season/episode number MAT likhna, woh alag se add hoga\n\nSirf JSON array return karo:\n["title 1","title 2","title 3","title 4","title 5","title 6","title 7"]` }],
+      }),
+    });
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content?.trim()||'[]';
+    const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    if (Array.isArray(parsed) && parsed.length) {
+      setGeneratedTitles(parsed);
+      setCurrentTitleIdx(0);
+    }
+  } catch(e) { toast('❌ '+e.message); }
+  setTitlesLoading(false);
+}
+
+async function generateYtDesc() {
+  const ep = lastEp;
+  if (!ep || !ep.storyChunks?.length) { toast('⚠️ Pehle story complete karo!'); return; }
+  setDescLoading(true); setDesc('');
+  const title = (ep.title||'').split(' | ')[0] || ep.title || '';
+  const epNum = ep.epNum || 'EP 01';
+  const season = ep.season || 'SEASON 1';
+  const storyText = ep.storyChunks.map(c=>c.text).join('\n\n').slice(0,800);
+  try {
+    const res = await fetch('/api/ai',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'openai/gpt-4o-mini', max_tokens:800, temperature:0.7,
+        messages:[{ role:'user', content:`Story: "${title}" — ${season} ${epNum}\n\n${storyText}\n\nIs YouTube video ke liye Hindi description + hashtags banao.\n\nFormat:\n- 3-4 para Hindi description (mystery/horror hook)\n- Subscribe CTA\n- 15-20 relevant hashtags\n\nSEO optimized. Ready-to-paste.` }],
+      }),
+    });
+    const data = await res.json();
+    setDesc(data.choices?.[0]?.message?.content?.trim()||'');
+  } catch(e) { toast('❌ '+e.message); }
+  setDescLoading(false);
+}
 
   // Show next title
   function nextTitle() {
@@ -204,10 +226,13 @@ function YoutubePage({ user }) {
 
   // ── Description ───────────────────────────────────
   async function generateYtDesc() {
-    const { chunks, title, epNum, season } = storyRef.current;
-    if (!chunks.length) { toast('⚠️ Pehle story complete karo!'); return; }
+    const ep = lastEp;
+    if (!ep || !ep.storyChunks?.length) { toast('⚠️ Pehle story complete karo!'); return; }
     setDescLoading(true); setDesc('');
-    const storyText = chunks.map(c=>c.text).join('\n\n').slice(0,800);
+    const title = (ep.title||'').split(' | ')[0] || ep.title || '';
+    const epNum = ep.epNum || 'EP 01';
+    const season = ep.season || 'SEASON 1';
+    const storyText = ep.storyChunks.map(c=>c.text).join('\n\n').slice(0,800);
     try {
       const res  = await fetch('/api/ai',{
         method:'POST', headers:{'Content-Type':'application/json'},
